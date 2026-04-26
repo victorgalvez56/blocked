@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VoxelPreview } from './voxel-preview';
 import { LogoMark } from './logo-mark';
 import { BomPanel } from './bom-panel';
@@ -13,6 +14,7 @@ import {
   type DepthMode,
 } from '@/lib/voxelizer/client-image-to-grid';
 import { voxelizeMultiview } from '@/lib/voxelizer/multiview';
+import { renderMeshTo4Views } from '@/lib/voxelizer/render-views';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
 
 async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
@@ -258,6 +260,48 @@ export function ImageRunner() {
     }
   }
 
+  async function generateMaxDetail() {
+    if (aiPrompt.trim().length < 3) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      // Step 1: chain DALL·E → Trellis to get a GLB. /api/lab/generate-3d already does this in 'text' mode
+      const res = await fetch('/api/lab/generate-3d', {
+        method: 'POST',
+        body: (() => {
+          const fd = new FormData();
+          fd.set('slug', 'firtoz/trellis');
+          fd.set('mode', 'text');
+          fd.set('prompt', aiPrompt.trim());
+          return fd;
+        })(),
+      });
+      const data = (await res.json()) as { ok: boolean; url?: string | null; error?: string };
+      if (!data.ok || !data.url) {
+        throw new Error(data.error ?? 'AI 3D mesh generation failed');
+      }
+
+      // Step 2: load the mesh client-side
+      const loader = new GLTFLoader();
+      const gltf = await loader.loadAsync(data.url);
+
+      // Step 3: render 4 ortho views from the mesh — guaranteed identity consistency
+      const rendered = await renderMeshTo4Views(gltf.scene, 512);
+
+      // Step 4: stuff the views into multiview state — existing voxelizer takes over
+      const next: Partial<Record<ViewKey, ImageEntry>> = {};
+      for (const k of VIEW_KEYS) {
+        next[k] = { el: rendered[k].image, url: rendered[k].dataUrl };
+      }
+      setViews(next as Record<ViewKey, ImageEntry>);
+      setMode('multiview');
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'max-detail generation failed');
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   function update<K extends keyof ClientVoxelizeOpts>(key: K, value: ClientVoxelizeOpts[K]) {
     setOpts((prev) => ({ ...prev, [key]: value }));
   }
@@ -367,7 +411,7 @@ export function ImageRunner() {
 
                 <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
                   <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
-                    ↳ or generate 4 views with AI
+                    ↳ or generate with AI
                   </div>
                   <textarea
                     value={aiPrompt}
@@ -380,12 +424,23 @@ export function ImageRunner() {
                   />
                   <button
                     type="button"
-                    onClick={generate4Views}
+                    onClick={generateMaxDetail}
                     disabled={aiBusy || aiPrompt.trim().length < 3}
                     className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
                   >
-                    {aiBusy ? 'DALL·E ×4… (~15s parallel)' : 'Generate 4 views · $0.16'}
+                    {aiBusy ? 'DALL·E → Trellis → render… (~30-60s)' : '🏆 Max detail · text → AI 3D · $0.08'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={generate4Views}
+                    disabled={aiBusy || aiPrompt.trim().length < 3}
+                    className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
+                  >
+                    {aiBusy ? '…' : 'gpt-image-1 4 views · $0.17'}
+                  </button>
+                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                    🏆 = AI 3D mesh + render local · perfect consistency
+                  </div>
                   {aiError && (
                     <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
                       <span className="font-bold uppercase tracking-[0.14em] text-red">Error</span>{' '}
