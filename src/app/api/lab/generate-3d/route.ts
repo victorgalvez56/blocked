@@ -2,6 +2,7 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import Replicate from 'replicate';
 import { serverEnv } from '@/lib/utils/env';
+import { openaiClient } from '@/lib/openai/client';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600;
@@ -9,12 +10,34 @@ export const maxDuration = 600;
 interface LabResponse {
   ok: boolean;
   url?: string | null;
+  referenceImageUrl?: string;
+  referencePrompt?: string;
+  dalleCostUsd?: number;
   rawOutput?: unknown;
   modelSlug?: string;
   versionId?: string;
   status?: string;
   durationMs: number;
+  dalleDurationMs?: number;
   error?: string;
+}
+
+const DALLE_STYLE_ANCHOR =
+  ' Single isolated subject, plain white seamless background, centered with margin, simple solid colors, soft even lighting, front 3/4 view, no text, no watermark, no shadows on background.';
+
+async function generateReferenceImage(prompt: string): Promise<{ url: string; costUsd: number }> {
+  const dalle = openaiClient();
+  const resp = await dalle.images.generate({
+    model: 'dall-e-3',
+    prompt: prompt + DALLE_STYLE_ANCHOR,
+    size: '1024x1024',
+    quality: 'standard',
+    n: 1,
+    response_format: 'url',
+  });
+  const url = resp.data?.[0]?.url;
+  if (!url) throw new Error('DALL·E returned no image URL');
+  return { url, costUsd: 0.04 };
 }
 
 const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'canceled']);
@@ -39,6 +62,7 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
   }
 
   const slug = String(formData.get('slug') || '').trim();
+  const mode = String(formData.get('mode') || 'image') as 'text' | 'image';
   const prompt = String(formData.get('prompt') || '').trim();
   const file = formData.get('image') as File | null;
 
@@ -48,15 +72,53 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
       { status: 400 },
     );
   }
-  if (!prompt && (!file || file.size === 0)) {
+
+  if (mode === 'text' && !prompt) {
     return NextResponse.json(
-      { ok: false, error: 'image or prompt required', durationMs: 0 },
+      { ok: false, error: 'prompt required for text mode', durationMs: 0 },
+      { status: 400 },
+    );
+  }
+  if (mode === 'image' && (!file || file.size === 0)) {
+    return NextResponse.json(
+      { ok: false, error: 'image required for image mode', durationMs: 0 },
       { status: 400 },
     );
   }
 
-  let imageDataUrl: string | undefined;
-  if (file && file.size > 0) {
+  let imageInput: string | undefined;
+  let referenceImageUrl: string | undefined;
+  let referencePrompt: string | undefined;
+  let dalleCost = 0;
+  let dalleDurationMs = 0;
+
+  if (mode === 'text') {
+    if (!env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { ok: false, error: 'text mode requires OPENAI_API_KEY (chains DALL·E → 3D)', durationMs: 0 },
+        { status: 400 },
+      );
+    }
+    const dalleStart = Date.now();
+    try {
+      const dalle = await generateReferenceImage(prompt);
+      imageInput = dalle.url;
+      referenceImageUrl = dalle.url;
+      referencePrompt = prompt;
+      dalleCost = dalle.costUsd;
+      dalleDurationMs = Date.now() - dalleStart;
+    } catch (e) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `DALL·E step failed: ${e instanceof Error ? e.message : 'unknown'}`,
+          dalleDurationMs: Date.now() - dalleStart,
+          durationMs: Date.now() - dalleStart,
+        },
+        { status: 502 },
+      );
+    }
+  } else if (file && file.size > 0) {
     if (file.size > 10 * 1024 * 1024) {
       return NextResponse.json(
         { ok: false, error: 'image too large (max 10MB)', durationMs: 0 },
@@ -65,7 +127,7 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
     }
     const buf = Buffer.from(await file.arrayBuffer());
     const mime = file.type || 'image/png';
-    imageDataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+    imageInput = `data:${mime};base64,${buf.toString('base64')}`;
   }
 
   const replicate = new Replicate({ auth: env.REPLICATE_API_TOKEN });
@@ -79,12 +141,14 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
     /trellis|hunyuan3d-2mv|hunyuan-3d-3\.1/i.test(ownerModel);
 
   const input: Record<string, unknown> = {};
-  if (prompt) input.prompt = prompt;
-  if (imageDataUrl) {
+  // Only send prompt if explicitly in image mode with a typed prompt
+  // In text mode the user prompt was already used for DALL·E
+  if (mode === 'image' && prompt) input.prompt = prompt;
+  if (imageInput) {
     if (useImagesArray) {
-      input.images = [imageDataUrl];
+      input.images = [imageInput];
     } else {
-      input.image = imageDataUrl;
+      input.image = imageInput;
     }
   }
   if (!owner || !name) {
@@ -184,6 +248,10 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
     return NextResponse.json({
       ok: true,
       url,
+      referenceImageUrl,
+      referencePrompt,
+      dalleCostUsd: dalleCost > 0 ? dalleCost : undefined,
+      dalleDurationMs: dalleDurationMs > 0 ? dalleDurationMs : undefined,
       rawOutput: output,
       modelSlug: ownerModel,
       versionId,

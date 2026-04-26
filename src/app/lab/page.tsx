@@ -64,6 +64,10 @@ const MODELS: ModelOption[] = [
 interface LabResult {
   ok: boolean;
   url?: string | null;
+  referenceImageUrl?: string;
+  referencePrompt?: string;
+  dalleCostUsd?: number;
+  dalleDurationMs?: number;
   rawOutput?: unknown;
   modelSlug?: string;
   versionId?: string;
@@ -72,10 +76,13 @@ interface LabResult {
   error?: string;
 }
 
+type SourceMode = 'text' | 'image';
+
 export default function LabPage() {
+  const [mode, setMode] = useState<SourceMode>('text');
   const [chosenSlug, setChosenSlug] = useState<string>(MODELS[0].slug);
   const [customSlug, setCustomSlug] = useState('');
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState('a cute red dragon');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileSelectedRef = useRef<File | null>(null);
@@ -95,7 +102,8 @@ export default function LabPage() {
   async function generate() {
     const slug = customSlug.trim() || chosenSlug;
     if (!slug) return;
-    if (!prompt.trim() && !fileSelectedRef.current) return;
+    if (mode === 'text' && !prompt.trim()) return;
+    if (mode === 'image' && !fileSelectedRef.current) return;
 
     setBusy(true);
     setResult(null);
@@ -105,8 +113,11 @@ export default function LabPage() {
     try {
       const fd = new FormData();
       fd.set('slug', slug);
+      fd.set('mode', mode);
       if (prompt.trim()) fd.set('prompt', prompt.trim());
-      if (fileSelectedRef.current) fd.set('image', fileSelectedRef.current);
+      if (mode === 'image' && fileSelectedRef.current) {
+        fd.set('image', fileSelectedRef.current);
+      }
 
       const res = await fetch('/api/lab/generate-3d', { method: 'POST', body: fd });
       const data = (await res.json()) as LabResult;
@@ -168,54 +179,89 @@ export default function LabPage() {
         <aside className="space-y-5">
           <section className="space-y-2">
             <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
-              1 · Image (most models need this)
+              1 · Source
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onFile(f);
-              }}
-            />
-            <div
-              onClick={() => fileRef.current?.click()}
-              className="press relative cursor-pointer overflow-hidden p-0"
-              style={{ minHeight: 144 }}
-            >
-              {imageUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={imageUrl}
-                  alt="upload"
-                  className="block h-[180px] w-full bg-ink object-contain"
-                />
-              ) : (
-                <div className="flex h-full min-h-[144px] flex-col items-center justify-center px-4 py-6 text-center">
-                  <div className="display-xl text-[16px]">DROP IMAGE</div>
-                  <div className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-ink">
-                    PNG · JPG · max 10MB · plain bg
-                  </div>
-                </div>
-              )}
+            <div className="flex border-2 border-ink shadow-[3px_3px_0_var(--ink)]">
+              <button
+                type="button"
+                onClick={() => setMode('text')}
+                disabled={busy}
+                className={`flex-1 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition ${
+                  mode === 'text' ? 'bg-ink text-paper' : 'bg-paper text-ink hover:bg-yellow'
+                }`}
+              >
+                Text → 3D
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('image')}
+                disabled={busy}
+                className={`flex-1 border-l-2 border-ink px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition ${
+                  mode === 'image' ? 'bg-ink text-paper' : 'bg-paper text-ink hover:bg-yellow'
+                }`}
+              >
+                Image → 3D
+              </button>
             </div>
           </section>
 
-          <section className="space-y-2">
-            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
-              2 · Prompt (optional · text-capable models)
-            </div>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={2}
-              className="w-full resize-none border-2 border-ink bg-paper px-3 py-2 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
-              placeholder="a cute red dragon (only used by Trellis and similar)"
-              disabled={busy}
-            />
-          </section>
+          {mode === 'text' && (
+            <section className="space-y-2">
+              <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
+                2 · Prompt
+              </div>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                rows={3}
+                className="w-full resize-none border-2 border-ink bg-paper px-3 py-2 font-mono text-[13px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
+                placeholder="a cute red dragon"
+                disabled={busy}
+              />
+              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                Pipeline: text → DALL·E ($0.04) → 3D model → mesh
+              </div>
+            </section>
+          )}
+
+          {mode === 'image' && (
+            <section className="space-y-2">
+              <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
+                2 · Image
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onFile(f);
+                }}
+              />
+              <div
+                onClick={() => fileRef.current?.click()}
+                className="press relative cursor-pointer overflow-hidden p-0"
+                style={{ minHeight: 144 }}
+              >
+                {imageUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={imageUrl}
+                    alt="upload"
+                    className="block h-[180px] w-full bg-ink object-contain"
+                  />
+                ) : (
+                  <div className="flex h-full min-h-[144px] flex-col items-center justify-center px-4 py-6 text-center">
+                    <div className="display-xl text-[16px]">DROP IMAGE</div>
+                    <div className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-ink">
+                      PNG · JPG · max 10MB · plain bg
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
 
           <section className="space-y-2">
             <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
@@ -394,13 +440,27 @@ export default function LabPage() {
             </div>
           )}
 
+          {result?.ok && result.referenceImageUrl && (
+            <div className="border-2 border-ink bg-paper p-3 shadow-[3px_3px_0_var(--ink)]">
+              <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink-2">
+                ↳ DALL·E reference (text→image step)
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={result.referenceImageUrl}
+                alt={result.referencePrompt ?? 'dalle reference'}
+                className="block w-full max-w-[180px] border-2 border-ink"
+              />
+            </div>
+          )}
+
           {result?.ok && (
             <div className="grid grid-cols-3 gap-2">
-              <Stat label="Duration" value={`${(result.durationMs / 1000).toFixed(1)}s`} />
+              <Stat label="Total time" value={`${(result.durationMs / 1000).toFixed(1)}s`} />
               <Stat label="Status" value={result.status ?? '—'} />
               <Stat
-                label="Output"
-                value={result.url ? 'GLB' : 'unknown'}
+                label="Total cost"
+                value={`$${((result.dalleCostUsd ?? 0) + estimatedCostFor(result.modelSlug ?? '')).toFixed(2)}`}
               />
               {result.url && (
                 <a
@@ -429,6 +489,13 @@ export default function LabPage() {
       </div>
     </main>
   );
+}
+
+function estimatedCostFor(slug: string): number {
+  if (slug.includes('trellis')) return 0.04;
+  if (slug.includes('hunyuan-3d-3.1')) return 0.15;
+  if (slug.includes('hunyuan3d-2')) return 0.11;
+  return 0.1;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
