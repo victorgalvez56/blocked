@@ -24,7 +24,7 @@ const MODELS: ModelOption[] = [
     label: 'Trellis (Microsoft, community port)',
     cost: '~$0.04',
     latency: '15-40s',
-    inputs: 'image',
+    inputs: '1 image (sent as images[])',
     notes: 'Cheapest, decent quality. Best ROI for our use case.',
   },
   {
@@ -32,23 +32,15 @@ const MODELS: ModelOption[] = [
     label: 'Hunyuan3D-2 (Tencent, official)',
     cost: '~$0.11',
     latency: '60-120s',
-    inputs: 'image',
+    inputs: '1 image',
     notes: 'Higher quality textures, slower. Official Tencent.',
-  },
-  {
-    slug: 'tencent/hunyuan3d-2mv',
-    label: 'Hunyuan3D-2 MV (multi-view)',
-    cost: '~$0.11',
-    latency: '60-120s',
-    inputs: '4 images (front/back/left/right)',
-    notes: 'Best quality if you have aligned multi-view images.',
   },
   {
     slug: 'tencent/hunyuan-3d-3.1',
     label: 'Hunyuan3D-3.1 (newest)',
     cost: '~$0.15',
     latency: '~90s',
-    inputs: 'image',
+    inputs: '1 image (sent as images[])',
     notes: 'Newest Tencent release, sharper geometry.',
   },
   {
@@ -56,7 +48,7 @@ const MODELS: ModelOption[] = [
     label: 'Hunyuan3D-2 (ndreca, turbo)',
     cost: '~$0.11',
     latency: '~115s',
-    inputs: 'image',
+    inputs: '1 image',
     notes: 'Community-tuned turbo variant.',
   },
 ];

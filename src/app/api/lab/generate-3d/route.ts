@@ -68,15 +68,25 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
     imageDataUrl = `data:${mime};base64,${buf.toString('base64')}`;
   }
 
-  const input: Record<string, unknown> = {};
-  if (prompt) input.prompt = prompt;
-  if (imageDataUrl) input.image = imageDataUrl;
-
   const replicate = new Replicate({ auth: env.REPLICATE_API_TOKEN });
   const start = Date.now();
 
   const [ownerModel, explicitVersion] = slug.split(':');
   const [owner, name] = ownerModel.split('/');
+
+  // Each model has different input schema. Send the right key.
+  const useImagesArray =
+    /trellis|hunyuan3d-2mv|hunyuan-3d-3\.1/i.test(ownerModel);
+
+  const input: Record<string, unknown> = {};
+  if (prompt) input.prompt = prompt;
+  if (imageDataUrl) {
+    if (useImagesArray) {
+      input.images = [imageDataUrl];
+    } else {
+      input.image = imageDataUrl;
+    }
+  }
   if (!owner || !name) {
     return NextResponse.json(
       { ok: false, error: `invalid slug format "${slug}" (expected owner/model[:version])`, durationMs: 0 },
