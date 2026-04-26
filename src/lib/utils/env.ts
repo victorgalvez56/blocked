@@ -11,6 +11,9 @@ const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: blankToUndef,
   UPSTASH_REDIS_REST_URL: blankToUndef,
   UPSTASH_REDIS_REST_TOKEN: blankToUndef,
+  REPLICATE_API_TOKEN: blankToUndef,
+  REPLICATE_HUNYUAN3D_MODEL: blankToUndef,
+  REPLICATE_TRELLIS_MODEL: blankToUndef,
 });
 
 const publicSchema = z.object({
