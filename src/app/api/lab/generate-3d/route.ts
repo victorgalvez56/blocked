@@ -139,6 +139,7 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
   // Each model has different input schema. Send the right key.
   const useImagesArray =
     /trellis|hunyuan3d-2mv|hunyuan-3d-3\.1/i.test(ownerModel);
+  const isTrellis = /trellis/i.test(ownerModel);
 
   const input: Record<string, unknown> = {};
   // Only send prompt if explicitly in image mode with a typed prompt
@@ -150,6 +151,15 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
     } else {
       input.image = imageInput;
     }
+  }
+  // Trellis: by default returns only video. Force GLB output.
+  if (isTrellis) {
+    input.generate_model = true;
+    input.generate_color = true;
+    input.generate_normal = false;
+    input.save_gaussian_ply = false;
+    input.texture_size = 1024;
+    input.mesh_simplify = 0.95;
   }
   if (!owner || !name) {
     return NextResponse.json(
@@ -233,16 +243,25 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
       url = typeof first === 'string' ? first : null;
     } else if (output && typeof output === 'object') {
       const obj = output as Record<string, unknown>;
-      const candidate =
-        obj.mesh ??
-        obj.glb ??
-        obj.model_file ??
-        obj.model ??
-        obj.output ??
-        obj.url ??
-        obj.file ??
-        obj.gaussian_ply;
-      if (typeof candidate === 'string') url = candidate;
+      // Try keys in priority order: textured GLB first, then any mesh, lastly fallback
+      const candidates = [
+        obj.model_file,
+        obj.glb,
+        obj.mesh,
+        obj.textured_mesh,
+        obj.model,
+        obj.output_glb,
+        obj.output,
+        obj.url,
+        obj.file,
+        obj.gaussian_ply,
+      ];
+      for (const c of candidates) {
+        if (typeof c === 'string' && c.length > 0) {
+          url = c;
+          break;
+        }
+      }
     }
 
     return NextResponse.json({
