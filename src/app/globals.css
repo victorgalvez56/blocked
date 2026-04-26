@@ -132,31 +132,34 @@ input[type='checkbox']:active {
   transform: translate(3px, 3px);
 }
 
-/* Buttons / pressables — generic class */
-.press {
-  border: 2px solid var(--ink);
-  background: var(--paper);
-  box-shadow: 4px 4px 0 var(--ink);
-  transition: box-shadow 0.1s, transform 0.1s, background 0.1s;
-  font-weight: 700;
-  cursor: pointer;
-}
-.press:hover {
-  background: var(--yellow);
-}
-.press:active,
-.press[data-active='true'] {
-  box-shadow: 0 0 0 var(--ink);
-  transform: translate(4px, 4px);
-}
-.press:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  box-shadow: 4px 4px 0 var(--ink) !important;
-  transform: none !important;
-}
-.press:disabled:hover {
-  background: var(--paper);
+/* Buttons / pressables — generic class. Wrapped in @layer components so Tailwind utility
+   classes (bg-red, hover:bg-red, etc.) consistently override the defaults. */
+@layer components {
+  .press {
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    box-shadow: 4px 4px 0 var(--ink);
+    transition: box-shadow 0.1s, transform 0.1s, background 0.1s;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .press:hover {
+    background: var(--yellow);
+  }
+  .press:active,
+  .press[data-active='true'] {
+    box-shadow: 0 0 0 var(--ink);
+    transform: translate(4px, 4px);
+  }
+  .press:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: 4px 4px 0 var(--ink) !important;
+    transform: none !important;
+  }
+  .press:disabled:hover {
+    background: var(--paper);
+  }
 }
 
 /* Selects */

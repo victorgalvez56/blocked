@@ -426,7 +426,7 @@ export function ImageRunner() {
                     type="button"
                     onClick={generateMaxDetail}
                     disabled={aiBusy || aiPrompt.trim().length < 3}
-                    className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
+                    className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper hover:bg-red hover:text-paper disabled:bg-ink-2"
                   >
                     {aiBusy ? 'DALL·E → Trellis → render… (~30-60s)' : '🏆 Max detail · text → AI 3D · $0.08'}
                   </button>
