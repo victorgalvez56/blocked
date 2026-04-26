@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { VoxelPreview } from './voxel-preview';
 import { LogoMark } from './logo-mark';
@@ -12,7 +12,29 @@ import {
   type ClientVoxelizeOpts,
   type DepthMode,
 } from '@/lib/voxelizer/client-image-to-grid';
+import { voxelizeMultiview } from '@/lib/voxelizer/multiview';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
+
+type SourceMode = 'single' | 'multiview';
+type ViewKey = 'front' | 'side' | 'back' | 'top';
+const VIEW_KEYS: ViewKey[] = ['front', 'side', 'back', 'top'];
+const VIEW_LABELS: Record<ViewKey, string> = {
+  front: 'Front',
+  side: 'Side',
+  back: 'Back',
+  top: 'Top',
+};
+const VIEW_HINTS: Record<ViewKey, string> = {
+  front: 'Subject facing camera',
+  side: 'Right profile · front faces left',
+  back: 'Subject from behind',
+  top: 'View from above · front at bottom',
+};
+
+interface ImageEntry {
+  el: HTMLImageElement;
+  url: string;
+}
 
 const DEPTH_MODES: Array<{ id: DepthMode; label: string }> = [
   { id: 'edge', label: 'Edge — rounded' },
@@ -32,15 +54,14 @@ function nowStamp(): string {
 
 export function ImageRunner() {
   const [opts, setOpts] = useState<ClientVoxelizeOpts>(DEFAULT_OPTS);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
+  const [mode, setMode] = useState<SourceMode>('single');
+  const [single, setSingle] = useState<ImageEntry | null>(null);
+  const [views, setViews] = useState<Partial<Record<ViewKey, ImageEntry>>>({});
   const [plan, setPlan] = useState<VoxelGridSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [stamp, setStamp] = useState('—');
   const [layerCap, setLayerCap] = useState<number>(99);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const dragRef = useRef<HTMLDivElement>(null);
   const revealTweenRef = useRef<gsap.core.Tween | null>(null);
 
   useEffect(() => {
@@ -97,42 +118,72 @@ export function ImageRunner() {
     };
   }, [plan, layerCap]);
 
-  const runVoxelize = useCallback(async (img: HTMLImageElement, o: ClientVoxelizeOpts) => {
+  // Re-voxelize whenever inputs or opts change
+  useEffect(() => {
+    const ready =
+      mode === 'single'
+        ? single != null
+        : !!(views.front && views.side && views.back && views.top);
+    if (!ready) return;
+
     setBusy(true);
     setError(null);
-    try {
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-      const grid = voxelizeImage(img, o);
-      setPlan(grid);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'voxelize failed');
-    } finally {
-      setBusy(false);
-    }
-  }, []);
 
-  async function onFile(file: File) {
+    const handle = requestAnimationFrame(() => {
+      try {
+        let next: VoxelGridSnapshot;
+        if (mode === 'single' && single) {
+          next = voxelizeImage(single.el, opts);
+        } else if (
+          mode === 'multiview' &&
+          views.front &&
+          views.side &&
+          views.back &&
+          views.top
+        ) {
+          next = voxelizeMultiview(
+            {
+              front: views.front.el,
+              side: views.side.el,
+              back: views.back.el,
+              top: views.top.el,
+            },
+            opts,
+          );
+        } else {
+          return;
+        }
+        setPlan(next);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'voxelize failed');
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    return () => cancelAnimationFrame(handle);
+  }, [mode, single, views, opts]);
+
+  async function loadSingle(file: File) {
     try {
       const img = await loadImageElement(file);
-      setImageEl(img);
-      setImageUrl(img.src);
-      runVoxelize(img, opts);
+      setSingle({ el: img, url: img.src });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'image load failed');
+    }
+  }
+
+  async function loadView(key: ViewKey, file: File) {
+    try {
+      const img = await loadImageElement(file);
+      setViews((prev) => ({ ...prev, [key]: { el: img, url: img.src } }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'image load failed');
     }
   }
 
   function update<K extends keyof ClientVoxelizeOpts>(key: K, value: ClientVoxelizeOpts[K]) {
-    const next = { ...opts, [key]: value };
-    setOpts(next);
-    if (imageEl) runVoxelize(imageEl, next);
-  }
-
-  function onDrop(e: React.DragEvent) {
-    e.preventDefault();
-    dragRef.current?.removeAttribute('data-dragging');
-    const f = e.dataTransfer.files?.[0];
-    if (f && f.type.startsWith('image/')) onFile(f);
+    setOpts((prev) => ({ ...prev, [key]: value }));
   }
 
   return (
@@ -165,46 +216,38 @@ export function ImageRunner() {
         {/* SIDEBAR — controls */}
         <aside className="border-b-2 border-ink bg-paper-2/40 lg:border-b-0 lg:border-r-2">
           <div className="p-6 md:p-7 space-y-6">
-            <SectionHeader index="01" title="Source" subtitle="Drop or pick an image" />
+            <SectionHeader
+              index="01"
+              title="Source"
+              subtitle={mode === 'single' ? '1 image · bas-relief' : '4 images · true 3D'}
+            />
 
-            <div
-              ref={dragRef}
-              onDragOver={(e) => {
-                e.preventDefault();
-                dragRef.current?.setAttribute('data-dragging', 'true');
-              }}
-              onDragLeave={() => dragRef.current?.removeAttribute('data-dragging')}
-              onDrop={onDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className="press relative cursor-pointer overflow-hidden p-0 data-[dragging=true]:bg-yellow"
-              style={{ minHeight: 144 }}
-            >
-              {imageUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={imageUrl}
-                  alt="source"
-                  className="block max-h-[180px] w-full object-contain bg-ink"
-                />
-              ) : (
-                <div className="flex h-full min-h-[144px] flex-col items-center justify-center gap-2 px-4 py-6 text-center">
-                  <div className="display-xl text-[18px]">DROP IMAGE HERE</div>
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-2">
-                    PNG · JPG · plain bg works best
-                  </div>
-                </div>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) onFile(f);
-                }}
+            <ModeSwitch mode={mode} onChange={setMode} />
+
+            {mode === 'single' && (
+              <DropZone
+                imageUrl={single?.url ?? null}
+                onFile={loadSingle}
               />
-            </div>
+            )}
+
+            {mode === 'multiview' && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {VIEW_KEYS.map((k) => (
+                    <ViewSlot
+                      key={k}
+                      viewKey={k}
+                      entry={views[k] ?? null}
+                      onFile={(f) => loadView(k, f)}
+                    />
+                  ))}
+                </div>
+                <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-2">
+                  {Object.keys(views).length} / 4 views uploaded
+                </div>
+              </div>
+            )}
 
             <Divider />
 
@@ -255,12 +298,14 @@ export function ImageRunner() {
             </div>
 
             <div className="space-y-3 pt-1">
-              <ToggleRow
-                label="Mirror to back"
-                hint="True 3D extrusion"
-                checked={opts.mirror}
-                onChange={(v) => update('mirror', v)}
-              />
+              {mode === 'single' && (
+                <ToggleRow
+                  label="Mirror to back"
+                  hint="True 3D extrusion"
+                  checked={opts.mirror}
+                  onChange={(v) => update('mirror', v)}
+                />
+              )}
               <ToggleRow
                 label="Snap to Lego palette"
                 hint="34 official colors"
@@ -362,6 +407,162 @@ export function ImageRunner() {
         {/* BOM column */}
         <BomPanel plan={plan} />
       </main>
+    </div>
+  );
+}
+
+function ModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: SourceMode;
+  onChange: (m: SourceMode) => void;
+}) {
+  return (
+    <div className="flex border-2 border-ink shadow-[3px_3px_0_var(--ink)]">
+      <button
+        type="button"
+        onClick={() => onChange('single')}
+        className={`flex-1 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition ${
+          mode === 'single'
+            ? 'bg-ink text-paper'
+            : 'bg-paper text-ink hover:bg-yellow'
+        }`}
+      >
+        Single view
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('multiview')}
+        className={`flex-1 border-l-2 border-ink px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition ${
+          mode === 'multiview'
+            ? 'bg-ink text-paper'
+            : 'bg-paper text-ink hover:bg-yellow'
+        }`}
+      >
+        Multi-view 3D
+      </button>
+    </div>
+  );
+}
+
+function DropZone({
+  imageUrl,
+  onFile,
+}: {
+  imageUrl: string | null;
+  onFile: (file: File) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragRef = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={dragRef}
+      onDragOver={(e) => {
+        e.preventDefault();
+        dragRef.current?.setAttribute('data-dragging', 'true');
+      }}
+      onDragLeave={() => dragRef.current?.removeAttribute('data-dragging')}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragRef.current?.removeAttribute('data-dragging');
+        const f = e.dataTransfer.files?.[0];
+        if (f && f.type.startsWith('image/')) onFile(f);
+      }}
+      onClick={() => fileInputRef.current?.click()}
+      className="press relative cursor-pointer overflow-hidden p-0 data-[dragging=true]:bg-yellow"
+      style={{ minHeight: 144 }}
+    >
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt="source"
+          className="block max-h-[180px] w-full bg-ink object-contain"
+        />
+      ) : (
+        <div className="flex h-full min-h-[144px] flex-col items-center justify-center gap-2 px-4 py-6 text-center">
+          <div className="display-xl text-[18px]">DROP IMAGE</div>
+          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-ink">
+            PNG · JPG · plain bg works best
+          </div>
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFile(f);
+        }}
+      />
+    </div>
+  );
+}
+
+function ViewSlot({
+  viewKey,
+  entry,
+  onFile,
+}: {
+  viewKey: ViewKey;
+  entry: ImageEntry | null;
+  onFile: (file: File) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragRef = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={dragRef}
+      onDragOver={(e) => {
+        e.preventDefault();
+        dragRef.current?.setAttribute('data-dragging', 'true');
+      }}
+      onDragLeave={() => dragRef.current?.removeAttribute('data-dragging')}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragRef.current?.removeAttribute('data-dragging');
+        const f = e.dataTransfer.files?.[0];
+        if (f && f.type.startsWith('image/')) onFile(f);
+      }}
+      onClick={() => fileInputRef.current?.click()}
+      className="press relative cursor-pointer overflow-hidden p-0 data-[dragging=true]:bg-yellow"
+      style={{ minHeight: 110 }}
+    >
+      {entry ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={entry.url}
+            alt={viewKey}
+            className="block h-[110px] w-full bg-ink object-contain"
+          />
+          <div className="absolute left-1 top-1 bg-ink px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-[0.18em] text-paper">
+            {VIEW_LABELS[viewKey]}
+          </div>
+        </>
+      ) : (
+        <div className="flex h-full min-h-[110px] flex-col items-center justify-center gap-1 px-2 text-center">
+          <div className="display-xl text-[14px] tracking-tight">
+            {VIEW_LABELS[viewKey].toUpperCase()}
+          </div>
+          <div className="font-mono text-[8px] font-semibold uppercase leading-tight tracking-[0.14em] text-ink-2">
+            {VIEW_HINTS[viewKey]}
+          </div>
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFile(f);
+        }}
+      />
     </div>
   );
 }
