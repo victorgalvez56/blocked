@@ -79,6 +79,7 @@ export function ImageRunner() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [views8, setViews8] = useState<Array<{ key: string; url: string }> | null>(null);
   const revealTweenRef = useRef<gsap.core.Tween | null>(null);
 
   useEffect(() => {
@@ -285,33 +286,18 @@ export function ImageRunner() {
         order.map((k) => loadImageFromUrl(data.urls![k])),
       );
 
-      // Run the N-view voxelizer directly — bypasses the 4-slot UI
+      // Display all 8 thumbs in the 8-view panel
+      setViews8(order.map((key) => ({ key, url: data.urls![key] })));
+
+      // Clear the 4-slot UI so it doesn't auto-trigger the 4-view voxelizer
+      setViews({});
+
+      // Run the N-view voxelizer directly — uses ALL 8
       const plan = voxelizeMultiviewN(
         loadedImages.map((image, i) => ({ image, spec: VIEWS_8[i] })),
         opts,
       );
       setPlan(plan);
-
-      // Reflect the front image as `single` so the UI shows the ref source
-      const frontImg = loadedImages[0];
-      setSingle({ el: frontImg, url: data.urls.front });
-
-      // Show the first 4 views in the multiview grid as a record of the run
-      const slotKeys: ViewKey[] = ['front', 'side', 'back', 'top'];
-      const slotMap: Record<ViewKey, number> = {
-        front: 0,
-        side: 2, // 'right' index
-        back: 4,
-        top: 1, // we don't actually have a top — use 'fr' as a placeholder marker
-      };
-      const next: Partial<Record<ViewKey, ImageEntry>> = {};
-      for (const k of slotKeys) {
-        next[k] = {
-          el: loadedImages[slotMap[k]],
-          url: data.urls[order[slotMap[k]]],
-        };
-      }
-      setViews(next as Record<ViewKey, ImageEntry>);
       setMode('multiview');
     } catch (e) {
       setAiError(e instanceof Error ? e.message : 'generation failed');
@@ -468,6 +454,37 @@ export function ImageRunner() {
                 <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-2">
                   {Object.keys(views).length} / 4 views uploaded
                 </div>
+
+                {views8 && (
+                  <div className="space-y-2 border-t-2 border-ink pt-3">
+                    <div className="flex items-baseline justify-between">
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-red">
+                        ◉ 8 views (gpt-image-1)
+                      </div>
+                      <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-ink-2">
+                        all used in silhouette intersection
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {views8.map((v) => (
+                        <div
+                          key={v.key}
+                          className="relative overflow-hidden border-2 border-ink shadow-[2px_2px_0_var(--ink)]"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={v.url}
+                            alt={v.key}
+                            className="block h-14 w-full bg-ink object-contain"
+                          />
+                          <div className="absolute left-0 top-0 bg-ink px-1 py-0.5 font-mono text-[7px] font-bold uppercase tracking-[0.18em] text-paper">
+                            {v.key}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
                   <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
