@@ -1,16 +1,21 @@
 import { z } from 'zod';
 
+const blankToUndef = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.length > 0 ? v : undefined));
+
 const serverSchema = z.object({
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_DAILY_BUDGET_USD: z.coerce.number().positive().default(20),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
-  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: blankToUndef,
+  UPSTASH_REDIS_REST_URL: blankToUndef,
+  UPSTASH_REDIS_REST_TOKEN: blankToUndef,
 });
 
 const publicSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
+  NEXT_PUBLIC_SUPABASE_URL: blankToUndef,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: blankToUndef,
 });
 
 let cachedServer: z.infer<typeof serverSchema> | null = null;
