@@ -5,29 +5,52 @@ import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { PALETTE } from '@/lib/palette';
+import { getBrick } from '@/lib/bricks';
 import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
 
 const colorByIdHex: Record<string, string> = Object.fromEntries(
   PALETTE.map((c) => [c.id, `#${c.hex}`]),
 );
 
-function VoxelInstancedGroup({ colorId, voxels }: { colorId: string; voxels: Voxel[] }) {
+interface BrickGroup {
+  key: string;
+  brickId: string;
+  rotation: number;
+  colorId: string;
+  voxels: Voxel[];
+}
+
+function dimsFor(brickId: string, rotation: number): { sx: number; sz: number } {
+  const def = getBrick(brickId);
+  if (!def) return { sx: 1, sz: 1 };
+  const { studsX, studsZ } = def.dimensions;
+  return rotation === 90 ? { sx: studsZ, sz: studsX } : { sx: studsX, sz: studsZ };
+}
+
+function BrickInstancedGroup({ group }: { group: BrickGroup }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const count = voxels.length;
-  const color = colorByIdHex[colorId] ?? '#888888';
+  const count = group.voxels.length;
+  const color = colorByIdHex[group.colorId] ?? '#888888';
+  const { sx, sz } = dimsFor(group.brickId, group.rotation);
 
   useEffect(() => {
     if (!meshRef.current) return;
     const dummy = new THREE.Object3D();
     for (let i = 0; i < count; i++) {
-      const v = voxels[i];
-      dummy.position.set(v.coord[0], v.coord[1] + 0.5, v.coord[2]);
+      const v = group.voxels[i];
+      // Anchor at coord = lower-corner; center the mesh by offsetting half-size
+      dummy.position.set(
+        v.coord[0] + sx / 2 - 0.5,
+        v.coord[1] + 0.5,
+        v.coord[2] + sz / 2 - 0.5,
+      );
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [voxels, count]);
+  }, [group.voxels, count, sx, sz]);
 
+  // Slim each axis by 0.04 to expose seams between adjacent pieces
   return (
     <instancedMesh
       ref={meshRef}
@@ -35,7 +58,7 @@ function VoxelInstancedGroup({ colorId, voxels }: { colorId: string; voxels: Vox
       castShadow
       receiveShadow
     >
-      <boxGeometry args={[0.96, 0.96, 0.96]} />
+      <boxGeometry args={[sx - 0.04, 0.96, sz - 0.04]} />
       <meshStandardMaterial color={color} roughness={0.55} metalness={0.04} />
     </instancedMesh>
   );
@@ -51,14 +74,24 @@ export function VoxelPreview({ plan }: { plan: VoxelGridSnapshot }) {
     [plan.size.x, plan.size.y, plan.size.z],
   );
 
-  const groups = useMemo(() => {
-    const m = new Map<string, Voxel[]>();
+  const groups = useMemo<BrickGroup[]>(() => {
+    const m = new Map<string, BrickGroup>();
     for (const v of plan.voxels) {
-      const arr = m.get(v.colorId) ?? [];
-      arr.push(v);
-      m.set(v.colorId, arr);
+      const key = `${v.brickId}|${v.rotation}|${v.colorId}`;
+      const existing = m.get(key);
+      if (existing) {
+        existing.voxels.push(v);
+      } else {
+        m.set(key, {
+          key,
+          brickId: v.brickId,
+          rotation: v.rotation,
+          colorId: v.colorId,
+          voxels: [v],
+        });
+      }
     }
-    return Array.from(m.entries());
+    return Array.from(m.values());
   }, [plan.voxels]);
 
   const cameraDistance = Math.max(plan.size.x, plan.size.y) * 1.65;
@@ -99,8 +132,8 @@ export function VoxelPreview({ plan }: { plan: VoxelGridSnapshot }) {
         <meshStandardMaterial color="#14161f" roughness={0.95} />
       </mesh>
 
-      {groups.map(([colorId, voxels]) => (
-        <VoxelInstancedGroup key={colorId} colorId={colorId} voxels={voxels} />
+      {groups.map((g) => (
+        <BrickInstancedGroup key={g.key} group={g} />
       ))}
     </Canvas>
   );

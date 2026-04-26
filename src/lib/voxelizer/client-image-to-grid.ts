@@ -1,5 +1,6 @@
 import { availableColors } from '@/lib/palette';
 import { nearestLegoColor } from '@/lib/color/nearest-lego';
+import { packBricks } from './brick-packer';
 import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
 import type { RGB } from '@/lib/color/lab';
 
@@ -12,6 +13,7 @@ export interface ClientVoxelizeOpts {
   depthMode: DepthMode;
   mirror: boolean;
   usePalette: boolean;
+  optimize: boolean;
 }
 
 export const DEFAULT_OPTS: ClientVoxelizeOpts = {
@@ -21,6 +23,7 @@ export const DEFAULT_OPTS: ClientVoxelizeOpts = {
   depthMode: 'edge',
   mirror: true,
   usePalette: true,
+  optimize: true,
 };
 
 export async function loadImageElement(file: File | Blob): Promise<HTMLImageElement> {
@@ -215,7 +218,7 @@ export function voxelizeImage(img: HTMLImageElement, opts: ClientVoxelizeOpts): 
     coord: [v.coord[0], v.coord[1], v.coord[2] - minZ],
   }));
 
-  return {
+  const snapshot: VoxelGridSnapshot = {
     size: { x: gw, y: gh, z: zRange },
     voxels: shifted,
     baseplate: {
@@ -223,4 +226,6 @@ export function voxelizeImage(img: HTMLImageElement, opts: ClientVoxelizeOpts): 
       depth: Math.max(zRange + 2, 8),
     },
   };
+
+  return opts.optimize ? packBricks(snapshot) : snapshot;
 }

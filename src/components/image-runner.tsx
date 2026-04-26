@@ -215,6 +215,12 @@ export function ImageRunner() {
                 checked={opts.usePalette}
                 onChange={(v) => update('usePalette', v)}
               />
+              <ToggleRow
+                label="Optimize bricks"
+                hint="Combine 1×1s into 1×2, 2×4, etc"
+                checked={opts.optimize}
+                onChange={(v) => update('optimize', v)}
+              />
             </div>
 
             <Divider />
@@ -385,13 +391,14 @@ function Readout({
     );
   }
   const colors = new Set(plan.voxels.map((v) => v.colorId));
+  const sizes = new Set(plan.voxels.map((v) => v.brickId));
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Stat label="Bricks" value={plan.voxels.length.toLocaleString()} accent />
+      <Stat label="Pieces" value={plan.voxels.length.toLocaleString()} accent />
+      <Stat label="Sizes" value={sizes.size.toString()} />
       <Stat label="Colors" value={colors.size.toString()} />
       <Stat label="Width" value={`${plan.size.x}`} />
       <Stat label="Height" value={`${plan.size.y}`} />
-      <Stat label="Depth" value={`${plan.size.z}`} />
       <Stat label="Status" value={busy ? 'BUILDING' : 'READY'} />
     </div>
   );
