@@ -138,10 +138,25 @@ function sampleSurface(
         const uc = new THREE.Vector2().fromBufferAttribute(uvAttr, cI);
         const u = ua.x * bary.u + ub.x * bary.v + uc.x * bary.w;
         const v = ua.y * bary.u + ub.y * bary.v + uc.y * bary.w;
-        const px = Math.max(0, Math.min(tex.width - 1, Math.floor(u * tex.width)));
-        const py = Math.max(0, Math.min(tex.height - 1, Math.floor((1 - v) * tex.height)));
-        const off = (py * tex.width + px) * 4;
-        bestRgb = [tex.data[off], tex.data[off + 1], tex.data[off + 2]];
+        const cx = Math.floor(u * tex.width);
+        const cy = Math.floor((1 - v) * tex.height);
+        // 3×3 neighborhood average — smooths over baked-shading and texture noise
+        let sr = 0;
+        let sg = 0;
+        let sb = 0;
+        let count = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const px = Math.max(0, Math.min(tex.width - 1, cx + dx));
+            const py = Math.max(0, Math.min(tex.height - 1, cy + dy));
+            const off = (py * tex.width + px) * 4;
+            sr += tex.data[off];
+            sg += tex.data[off + 1];
+            sb += tex.data[off + 2];
+            count++;
+          }
+        }
+        bestRgb = [sr / count, sg / count, sb / count];
       } else {
         bestRgb = defaults.get(mesh) ?? [180, 180, 180];
       }
@@ -195,7 +210,11 @@ export function meshToVoxelGrid(
 
   const palette = availableColors();
   const raycaster = new THREE.Raycaster();
-  const rayDirection = new THREE.Vector3(1, 0, 0);
+  const rayDirs = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 1),
+  ];
   const point = new THREE.Vector3();
   const voxels: Voxel[] = [];
 
@@ -208,16 +227,17 @@ export function meshToVoxelGrid(
           bbox.min.z + (iz + 0.5) * cellSize,
         );
 
-        let inside = false;
-        for (const mesh of meshes) {
-          raycaster.set(point, rayDirection);
-          const hits = raycaster.intersectObject(mesh, false);
-          if (hits.length % 2 === 1) {
-            inside = true;
-            break;
+        // Multi-ray inside test: cast 3 rays along axes, count odd-intersection votes
+        let votes = 0;
+        for (const dir of rayDirs) {
+          let totalHits = 0;
+          for (const mesh of meshes) {
+            raycaster.set(point, dir);
+            totalHits += raycaster.intersectObject(mesh, false).length;
           }
+          if (totalHits % 2 === 1) votes++;
         }
-        if (!inside) continue;
+        if (votes < 2) continue; // need majority of 3
 
         const rgb = sampleSurface(point, meshes, bvhs, textures, defaults);
         const colorId = nearestLegoColor(rgb, palette).id;
@@ -238,9 +258,12 @@ export function meshToVoxelGrid(
     }
   }
 
+  // Drop tiny disconnected fragments — keep only the largest connected component
+  const filtered = keepLargestComponent(voxels);
+
   let snapshot: VoxelGridSnapshot = {
     size: { x: Nx, y: Ny, z: Nz },
-    voxels,
+    voxels: filtered,
     baseplate: {
       width: Math.max(Nx + 2, 16),
       depth: Math.max(Nz + 2, 8),
@@ -250,4 +273,46 @@ export function meshToVoxelGrid(
   if (o.hollow) snapshot = hollowGrid(snapshot);
   if (o.optimize) snapshot = packBricks(snapshot);
   return snapshot;
+}
+
+function keepLargestComponent(voxels: Voxel[]): Voxel[] {
+  if (voxels.length === 0) return voxels;
+  const idxOf = new Map<string, number>();
+  for (let i = 0; i < voxels.length; i++) {
+    const v = voxels[i];
+    idxOf.set(`${v.coord[0]},${v.coord[1]},${v.coord[2]}`, i);
+  }
+  const visited = new Uint8Array(voxels.length);
+  const components: number[][] = [];
+
+  for (let i = 0; i < voxels.length; i++) {
+    if (visited[i]) continue;
+    const stack = [i];
+    const comp: number[] = [];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (visited[cur]) continue;
+      visited[cur] = 1;
+      comp.push(cur);
+      const [x, y, z] = voxels[cur].coord;
+      const neighbors = [
+        `${x + 1},${y},${z}`,
+        `${x - 1},${y},${z}`,
+        `${x},${y + 1},${z}`,
+        `${x},${y - 1},${z}`,
+        `${x},${y},${z + 1}`,
+        `${x},${y},${z - 1}`,
+      ];
+      for (const k of neighbors) {
+        const ni = idxOf.get(k);
+        if (ni !== undefined && !visited[ni]) stack.push(ni);
+      }
+    }
+    components.push(comp);
+  }
+
+  components.sort((a, b) => b.length - a.length);
+  const largest = components[0];
+  if (largest.length === voxels.length) return voxels;
+  return largest.map((i) => voxels[i]);
 }
