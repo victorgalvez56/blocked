@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { LogoMark } from '@/components/logo-mark';
 
@@ -9,22 +9,55 @@ const MeshViewer = dynamic(
   { ssr: false },
 );
 
-type ModelId = 'hunyuan3d-2' | 'trellis';
+interface ModelOption {
+  slug: string;
+  label: string;
+  cost: string;
+  latency: string;
+  inputs: string;
+  notes: string;
+}
 
-const MODELS: Array<{ id: ModelId; label: string; cost: string; latency: string; notes: string }> = [
+const MODELS: ModelOption[] = [
   {
-    id: 'hunyuan3d-2',
-    label: 'Hunyuan3D-2 (Tencent)',
-    cost: '~$0.18',
-    latency: '60-120s',
-    notes: 'Highest quality, best textures, slowest',
+    slug: 'firtoz/trellis',
+    label: 'Trellis (Microsoft, community port)',
+    cost: '~$0.04',
+    latency: '15-40s',
+    inputs: 'image',
+    notes: 'Cheapest, decent quality. Best ROI for our use case.',
   },
   {
-    id: 'trellis',
-    label: 'Trellis (Microsoft)',
-    cost: '~$0.04',
-    latency: '15-30s',
-    notes: 'Balanced quality/speed/cost',
+    slug: 'tencent/hunyuan3d-2',
+    label: 'Hunyuan3D-2 (Tencent, official)',
+    cost: '~$0.11',
+    latency: '60-120s',
+    inputs: 'image',
+    notes: 'Higher quality textures, slower. Official Tencent.',
+  },
+  {
+    slug: 'tencent/hunyuan3d-2mv',
+    label: 'Hunyuan3D-2 MV (multi-view)',
+    cost: '~$0.11',
+    latency: '60-120s',
+    inputs: '4 images (front/back/left/right)',
+    notes: 'Best quality if you have aligned multi-view images.',
+  },
+  {
+    slug: 'tencent/hunyuan-3d-3.1',
+    label: 'Hunyuan3D-3.1 (newest)',
+    cost: '~$0.15',
+    latency: '~90s',
+    inputs: 'image',
+    notes: 'Newest Tencent release, sharper geometry.',
+  },
+  {
+    slug: 'ndreca/hunyuan3d-2',
+    label: 'Hunyuan3D-2 (ndreca, turbo)',
+    cost: '~$0.11',
+    latency: '~115s',
+    inputs: 'image',
+    notes: 'Community-tuned turbo variant.',
   },
 ];
 
@@ -32,36 +65,48 @@ interface LabResult {
   ok: boolean;
   url?: string | null;
   rawOutput?: unknown;
-  model: string;
   modelSlug?: string;
+  versionId?: string;
+  status?: string;
   durationMs: number;
-  estimatedCostUsd?: number;
   error?: string;
 }
 
 export default function LabPage() {
-  const [prompt, setPrompt] = useState('a cute red dragon');
-  const [chosen, setChosen] = useState<ModelId>('trellis');
+  const [chosenSlug, setChosenSlug] = useState<string>(MODELS[0].slug);
+  const [customSlug, setCustomSlug] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const fileSelectedRef = useRef<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<LabResult | null>(null);
 
+  function onFile(file: File) {
+    fileSelectedRef.current = file;
+    setImageUrl(URL.createObjectURL(file));
+  }
+
   async function generate() {
-    if (prompt.trim().length < 3) return;
+    const slug = customSlug.trim() || chosenSlug;
+    if (!slug) return;
+    if (!prompt.trim() && !fileSelectedRef.current) return;
+
     setBusy(true);
     setResult(null);
     try {
-      const res = await fetch('/api/lab/generate-3d', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt, model: chosen }),
-      });
+      const fd = new FormData();
+      fd.set('slug', slug);
+      if (prompt.trim()) fd.set('prompt', prompt.trim());
+      if (fileSelectedRef.current) fd.set('image', fileSelectedRef.current);
+
+      const res = await fetch('/api/lab/generate-3d', { method: 'POST', body: fd });
       const data = (await res.json()) as LabResult;
       setResult(data);
     } catch (e) {
       setResult({
         ok: false,
         error: e instanceof Error ? e.message : 'request failed',
-        model: chosen,
         durationMs: 0,
       });
     } finally {
@@ -89,32 +134,69 @@ export default function LabPage() {
         </a>
       </header>
 
-      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-6 md:p-10 lg:grid-cols-[360px_1fr]">
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 p-6 md:p-10 lg:grid-cols-[400px_1fr]">
         <aside className="space-y-5">
           <section className="space-y-2">
             <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
-              Prompt
+              1 · Image (most models need this)
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onFile(f);
+              }}
+            />
+            <div
+              onClick={() => fileRef.current?.click()}
+              className="press relative cursor-pointer overflow-hidden p-0"
+              style={{ minHeight: 144 }}
+            >
+              {imageUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={imageUrl}
+                  alt="upload"
+                  className="block h-[180px] w-full bg-ink object-contain"
+                />
+              ) : (
+                <div className="flex h-full min-h-[144px] flex-col items-center justify-center px-4 py-6 text-center">
+                  <div className="display-xl text-[16px]">DROP IMAGE</div>
+                  <div className="mt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-ink">
+                    PNG · JPG · max 10MB · plain bg
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
+              2 · Prompt (optional · text-capable models)
             </div>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              rows={3}
-              className="w-full resize-none border-2 border-ink bg-paper px-3 py-2 font-mono text-[13px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
-              placeholder="a cute red dragon"
+              rows={2}
+              className="w-full resize-none border-2 border-ink bg-paper px-3 py-2 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
+              placeholder="a cute red dragon (only used by Trellis and similar)"
               disabled={busy}
             />
           </section>
 
           <section className="space-y-2">
             <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
-              Model
+              3 · Model
             </div>
             <div className="space-y-2">
               {MODELS.map((m) => (
                 <label
-                  key={m.id}
+                  key={m.slug}
                   className={`flex cursor-pointer items-start gap-3 border-2 border-ink bg-paper p-3 ${
-                    chosen === m.id
+                    chosenSlug === m.slug && !customSlug
                       ? 'shadow-[5px_5px_0_var(--ink)]'
                       : 'shadow-[3px_3px_0_var(--ink)]'
                   }`}
@@ -122,50 +204,60 @@ export default function LabPage() {
                   <input
                     type="radio"
                     name="model"
-                    checked={chosen === m.id}
-                    onChange={() => setChosen(m.id)}
+                    checked={chosenSlug === m.slug && !customSlug}
+                    onChange={() => {
+                      setChosenSlug(m.slug);
+                      setCustomSlug('');
+                    }}
                     className="mt-0.5"
                     disabled={busy}
                   />
                   <div className="flex-1">
-                    <div className="display-xl text-[14px] uppercase tracking-tight">
+                    <div className="display-xl text-[13px] uppercase tracking-tight">
                       {m.label}
                     </div>
-                    <div className="mt-0.5 flex gap-2 font-mono text-[10px] uppercase tracking-[0.14em]">
-                      <span className="text-red font-bold">{m.cost}</span>
+                    <div className="mt-0.5 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.14em]">
+                      <span className="font-bold text-red">{m.cost}</span>
                       <span className="text-ink-2">·</span>
                       <span className="text-ink-2">{m.latency}</span>
+                      <span className="text-ink-2">·</span>
+                      <span className="text-ink-2">in: {m.inputs}</span>
                     </div>
                     <div className="mt-1 font-mono text-[10px] tracking-[0.04em] text-ink-2">
                       {m.notes}
                     </div>
+                    <div className="mt-1 font-mono text-[9px] text-ink-2 opacity-70">
+                      {m.slug}
+                    </div>
                   </div>
                 </label>
               ))}
+              <input
+                type="text"
+                value={customSlug}
+                onChange={(e) => setCustomSlug(e.target.value)}
+                placeholder="custom slug → owner/model[:version]"
+                className="w-full border-2 border-ink bg-paper px-3 py-2 font-mono text-[11px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
+                disabled={busy}
+              />
             </div>
           </section>
 
           <button
             type="button"
             onClick={generate}
-            disabled={busy || prompt.trim().length < 3}
+            disabled={busy}
             className="press w-full bg-red px-6 py-3 font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
           >
-            {busy ? 'Generating · keep this tab open' : 'Generate 3D mesh →'}
+            {busy ? 'Generating · keep tab open' : 'Generate 3D mesh →'}
           </button>
 
-          <div className="border-t-2 border-dashed border-line-strong/60 pt-3 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-2">
-            Set <span className="font-bold text-red">REPLICATE_API_TOKEN</span> in{' '}
-            <code className="font-bold">.env.local</code> · grab one at replicate.com/account/api-tokens
-          </div>
-
           <details className="border-2 border-ink bg-paper p-3 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-2">
-            <summary className="cursor-pointer font-bold">Test Hyper3D / Rodin separately</summary>
+            <summary className="cursor-pointer font-bold">Test Hyper3D / Tripo separately</summary>
             <div className="mt-2 space-y-1 normal-case tracking-normal">
-              <div>Their playground: hyper3d.ai</div>
-              <div>Pricing: $0.10–0.30/gen (premium)</div>
+              <div>Hyper3D / Rodin: hyper3d.ai · ~$0.10-0.30/gen</div>
               <div>Tripo3D: tripo3d.ai · 600 free credits/mo</div>
-              <div>Compare quality on the same prompt then decide.</div>
+              <div>Meshy: meshy.ai · 200 free credits/mo</div>
             </div>
           </details>
         </aside>
@@ -182,16 +274,21 @@ export default function LabPage() {
                 {busy ? (
                   <div className="space-y-1 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-2">
                     <div className="animate-pulse text-red font-bold">→ Calling Replicate</div>
-                    <div>This can take 15-120s depending on the model</div>
+                    <div>Polling every 2s — can take 15-180s</div>
                   </div>
                 ) : result && !result.ok ? (
-                  <div className="space-y-1 text-left font-mono text-[11px] text-red">
+                  <div className="max-w-full space-y-1 break-words text-left font-mono text-[11px] text-red">
                     <div className="font-bold uppercase tracking-[0.14em]">Failed</div>
                     <div className="normal-case tracking-normal text-ink">{result.error}</div>
+                    {result.modelSlug && (
+                      <div className="mt-2 normal-case tracking-normal text-ink-2">
+                        Model: {result.modelSlug}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-2">
-                    No result yet · enter a prompt and generate
+                    Upload an image, pick a model, generate
                   </div>
                 )}
               </div>
@@ -200,9 +297,12 @@ export default function LabPage() {
 
           {result?.ok && (
             <div className="grid grid-cols-3 gap-2">
-              <Stat label="Model" value={result.model} />
               <Stat label="Duration" value={`${(result.durationMs / 1000).toFixed(1)}s`} />
-              <Stat label="Cost (est)" value={`$${(result.estimatedCostUsd ?? 0).toFixed(3)}`} />
+              <Stat label="Status" value={result.status ?? '—'} />
+              <Stat
+                label="Output"
+                value={result.url ? 'GLB' : 'unknown'}
+              />
               {result.url && (
                 <a
                   href={result.url}
@@ -210,16 +310,21 @@ export default function LabPage() {
                   rel="noopener noreferrer"
                   className="press col-span-3 bg-paper px-3 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-ink"
                 >
-                  Download .glb / .obj
+                  Open mesh URL
                 </a>
               )}
             </div>
           )}
 
-          {result?.ok && result.modelSlug && (
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
-              Model slug: <span className="font-bold text-ink">{result.modelSlug}</span>
-            </div>
+          {result && (
+            <details className="border-2 border-ink bg-paper p-3 font-mono text-[10px] text-ink-2">
+              <summary className="cursor-pointer font-bold uppercase tracking-[0.14em]">
+                Raw response
+              </summary>
+              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[9px]">
+                {JSON.stringify(result, null, 2)}
+              </pre>
+            </details>
           )}
         </section>
       </div>
