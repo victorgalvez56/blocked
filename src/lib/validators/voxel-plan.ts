@@ -50,6 +50,46 @@ export function validateGravity(plan: VoxelPlan): ValidationResult {
   return { ok: errors.length === 0, errors };
 }
 
+export interface CleanResult {
+  cleaned: VoxelPlan;
+  warnings: string[];
+  droppedCount: number;
+}
+
+export function cleanVoxelPlan(plan: VoxelPlan): CleanResult {
+  let voxels = [...plan.voxels];
+  const warnings: string[] = [];
+  let changed = true;
+  let pass = 0;
+  while (changed && pass < 8) {
+    changed = false;
+    pass++;
+    const occupied = new Set(voxels.map((v) => `${v.coord[0]},${v.coord[1]},${v.coord[2]}`));
+    const next = voxels.filter((v) => {
+      const [x, y, z] = v.coord;
+      if (y === 0) return true;
+      if (occupied.has(`${x},${y - 1},${z}`)) return true;
+      warnings.push(`dropped floating voxel at (${x},${y},${z})`);
+      changed = true;
+      return false;
+    });
+    voxels = next;
+  }
+  return {
+    cleaned: { ...plan, voxels },
+    warnings,
+    droppedCount: plan.voxels.length - voxels.length,
+  };
+}
+
+export function parseVoxelPlan(plan: unknown): { plan: VoxelPlan } | { error: string } {
+  const parsed = voxelGridSnapshotSchema.safeParse(plan);
+  if (!parsed.success) {
+    return { error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') };
+  }
+  return { plan: parsed.data };
+}
+
 export function validateVoxelPlan(plan: unknown): ValidationResult {
   const parsed = voxelGridSnapshotSchema.safeParse(plan);
   if (!parsed.success) {

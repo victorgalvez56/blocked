@@ -4,12 +4,14 @@ import { VOXELIZER_SYSTEM_PROMPT, voxelizerUserPrompt } from './prompts';
 import { availableColors } from '@/lib/palette';
 import type { BuildType } from '@/types/generation-job.types';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
-import { validateVoxelPlan } from '@/lib/validators/voxel-plan';
+import { cleanVoxelPlan, parseVoxelPlan } from '@/lib/validators/voxel-plan';
 
 export interface GptVisionResult {
   plan: VoxelGridSnapshot;
   costUsd: number;
   raw: unknown;
+  warnings: string[];
+  droppedFloats: number;
 }
 
 const GPT4O_VISION_COST_ESTIMATE = 0.025;
@@ -102,21 +104,36 @@ export async function imageToVoxelPlan(args: {
   const content = completion.choices[0]?.message?.content;
   if (!content) throw new Error('gpt-4o returned empty content');
 
-  let parsed: unknown;
+  let parsedJson: unknown;
   try {
-    parsed = JSON.parse(content);
+    parsedJson = JSON.parse(content);
   } catch {
     throw new Error('gpt-4o returned non-JSON content');
   }
 
-  const validation = validateVoxelPlan(parsed);
-  if (!validation.ok) {
-    throw new Error(`gpt-4o plan failed validation: ${validation.errors.slice(0, 3).join('; ')}`);
+  const parsed = parseVoxelPlan(parsedJson);
+  if ('error' in parsed) {
+    throw new Error(`gpt-4o plan failed schema validation: ${parsed.error}`);
+  }
+
+  const { cleaned, warnings, droppedCount } = cleanVoxelPlan(parsed.plan);
+
+  if (cleaned.voxels.length === 0) {
+    throw new Error('gpt-4o plan was empty after cleaning floating voxels');
+  }
+
+  const dropRatio = droppedCount / parsed.plan.voxels.length;
+  if (dropRatio > 0.5) {
+    throw new Error(
+      `gpt-4o plan dropped ${droppedCount}/${parsed.plan.voxels.length} voxels as floating — too unstable`,
+    );
   }
 
   return {
-    plan: parsed as VoxelGridSnapshot,
+    plan: cleaned,
     costUsd: GPT4O_VISION_COST_ESTIMATE,
-    raw: parsed,
+    raw: parsedJson,
+    warnings,
+    droppedFloats: droppedCount,
   };
 }
