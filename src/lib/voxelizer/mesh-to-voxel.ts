@@ -1,0 +1,253 @@
+'use client';
+
+import * as THREE from 'three';
+import {
+  computeBoundsTree,
+  disposeBoundsTree,
+  acceleratedRaycast,
+  MeshBVH,
+} from 'three-mesh-bvh';
+import { availableColors } from '@/lib/palette';
+import { nearestLegoColor } from '@/lib/color/nearest-lego';
+import { packBricks } from './brick-packer';
+import { hollowGrid } from './hollow';
+import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
+
+const patched = { current: false };
+
+function patchThree(): void {
+  if (patched.current) return;
+  (THREE.BufferGeometry.prototype as unknown as Record<string, unknown>).computeBoundsTree =
+    computeBoundsTree;
+  (THREE.BufferGeometry.prototype as unknown as Record<string, unknown>).disposeBoundsTree =
+    disposeBoundsTree;
+  (THREE.Mesh.prototype as unknown as Record<string, unknown>).raycast = acceleratedRaycast;
+  patched.current = true;
+}
+
+export interface MeshToVoxelOpts {
+  resolution: number;
+  hollow: boolean;
+  optimize: boolean;
+}
+
+export const DEFAULT_MESH_OPTS: MeshToVoxelOpts = {
+  resolution: 28,
+  hollow: true,
+  optimize: true,
+};
+
+function materialColor(material: THREE.Material | THREE.Material[]): [number, number, number] {
+  const m = Array.isArray(material) ? material[0] : material;
+  const c = (m as { color?: THREE.Color }).color;
+  if (!c) return [180, 180, 180];
+  return [Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255)];
+}
+
+interface TextureSampler {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
+
+function buildTextureSampler(material: THREE.Material | THREE.Material[]): TextureSampler | null {
+  const m = Array.isArray(material) ? material[0] : material;
+  const map = (m as { map?: THREE.Texture | null }).map;
+  if (!map?.image) return null;
+  try {
+    const img = map.image as HTMLImageElement | ImageBitmap | HTMLCanvasElement;
+    const w = (img as HTMLImageElement).width || 256;
+    const h = (img as HTMLImageElement).height || 256;
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img as CanvasImageSource, 0, 0, w, h);
+    return { data: ctx.getImageData(0, 0, w, h).data, width: w, height: h };
+  } catch {
+    return null;
+  }
+}
+
+function barycentric(
+  p: THREE.Vector3,
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  c: THREE.Vector3,
+): { u: number; v: number; w: number } {
+  const v0 = new THREE.Vector3().subVectors(b, a);
+  const v1 = new THREE.Vector3().subVectors(c, a);
+  const v2 = new THREE.Vector3().subVectors(p, a);
+  const d00 = v0.dot(v0);
+  const d01 = v0.dot(v1);
+  const d11 = v1.dot(v1);
+  const d20 = v2.dot(v0);
+  const d21 = v2.dot(v1);
+  const denom = d00 * d11 - d01 * d01;
+  if (denom === 0) return { u: 1, v: 0, w: 0 };
+  const v = (d11 * d20 - d01 * d21) / denom;
+  const w = (d00 * d21 - d01 * d20) / denom;
+  const u = 1 - v - w;
+  return { u, v, w };
+}
+
+function sampleSurface(
+  point: THREE.Vector3,
+  meshes: THREE.Mesh[],
+  bvhs: Map<THREE.Mesh, MeshBVH>,
+  textures: Map<THREE.Mesh, TextureSampler | null>,
+  defaults: Map<THREE.Mesh, [number, number, number]>,
+): [number, number, number] {
+  let bestDist = Infinity;
+  let bestRgb: [number, number, number] = [180, 180, 180];
+
+  const tempLocal = new THREE.Vector3();
+  const inverseMatrix = new THREE.Matrix4();
+  const target = { point: new THREE.Vector3(), faceIndex: 0, distance: 0 };
+
+  for (const mesh of meshes) {
+    const bvh = bvhs.get(mesh);
+    if (!bvh) continue;
+    inverseMatrix.copy(mesh.matrixWorld).invert();
+    tempLocal.copy(point).applyMatrix4(inverseMatrix);
+    const closest = bvh.closestPointToPoint(tempLocal, target);
+    if (!closest) continue;
+    if (closest.distance < bestDist) {
+      bestDist = closest.distance;
+
+      const tex = textures.get(mesh);
+      if (
+        tex &&
+        mesh.geometry.attributes.uv &&
+        mesh.geometry.index &&
+        closest.faceIndex !== undefined
+      ) {
+        const idx = mesh.geometry.index;
+        const aI = idx.getX(closest.faceIndex * 3);
+        const bI = idx.getX(closest.faceIndex * 3 + 1);
+        const cI = idx.getX(closest.faceIndex * 3 + 2);
+        const positionAttr = mesh.geometry.attributes.position;
+        const va = new THREE.Vector3().fromBufferAttribute(positionAttr, aI);
+        const vb = new THREE.Vector3().fromBufferAttribute(positionAttr, bI);
+        const vc = new THREE.Vector3().fromBufferAttribute(positionAttr, cI);
+        const bary = barycentric(closest.point, va, vb, vc);
+        const uvAttr = mesh.geometry.attributes.uv as THREE.BufferAttribute;
+        const ua = new THREE.Vector2().fromBufferAttribute(uvAttr, aI);
+        const ub = new THREE.Vector2().fromBufferAttribute(uvAttr, bI);
+        const uc = new THREE.Vector2().fromBufferAttribute(uvAttr, cI);
+        const u = ua.x * bary.u + ub.x * bary.v + uc.x * bary.w;
+        const v = ua.y * bary.u + ub.y * bary.v + uc.y * bary.w;
+        const px = Math.max(0, Math.min(tex.width - 1, Math.floor(u * tex.width)));
+        const py = Math.max(0, Math.min(tex.height - 1, Math.floor((1 - v) * tex.height)));
+        const off = (py * tex.width + px) * 4;
+        bestRgb = [tex.data[off], tex.data[off + 1], tex.data[off + 2]];
+      } else {
+        bestRgb = defaults.get(mesh) ?? [180, 180, 180];
+      }
+    }
+  }
+
+  return bestRgb;
+}
+
+export function meshToVoxelGrid(
+  scene: THREE.Object3D,
+  opts: Partial<MeshToVoxelOpts> = {},
+): VoxelGridSnapshot {
+  patchThree();
+  const o: MeshToVoxelOpts = { ...DEFAULT_MESH_OPTS, ...opts };
+
+  const meshes: THREE.Mesh[] = [];
+  scene.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.geometry?.attributes?.position) {
+      meshes.push(obj);
+    }
+  });
+  if (meshes.length === 0) {
+    return { size: { x: 0, y: 0, z: 0 }, voxels: [], baseplate: { width: 16, depth: 16 } };
+  }
+
+  scene.updateMatrixWorld(true);
+
+  const bbox = new THREE.Box3();
+  for (const m of meshes) bbox.expandByObject(m);
+  const size = new THREE.Vector3();
+  bbox.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  if (maxDim === 0) {
+    return { size: { x: 0, y: 0, z: 0 }, voxels: [], baseplate: { width: 16, depth: 16 } };
+  }
+
+  const Nx = Math.max(1, Math.round((size.x / maxDim) * o.resolution));
+  const Ny = Math.max(1, Math.round((size.y / maxDim) * o.resolution));
+  const Nz = Math.max(1, Math.round((size.z / maxDim) * o.resolution));
+  const cellSize = maxDim / o.resolution;
+
+  const bvhs = new Map<THREE.Mesh, MeshBVH>();
+  const defaults = new Map<THREE.Mesh, [number, number, number]>();
+  const textures = new Map<THREE.Mesh, TextureSampler | null>();
+  for (const mesh of meshes) {
+    bvhs.set(mesh, new MeshBVH(mesh.geometry));
+    defaults.set(mesh, materialColor(mesh.material));
+    textures.set(mesh, buildTextureSampler(mesh.material));
+  }
+
+  const palette = availableColors();
+  const raycaster = new THREE.Raycaster();
+  const rayDirection = new THREE.Vector3(1, 0, 0);
+  const point = new THREE.Vector3();
+  const voxels: Voxel[] = [];
+
+  for (let iy = 0; iy < Ny; iy++) {
+    for (let iz = 0; iz < Nz; iz++) {
+      for (let ix = 0; ix < Nx; ix++) {
+        point.set(
+          bbox.min.x + (ix + 0.5) * cellSize,
+          bbox.min.y + (iy + 0.5) * cellSize,
+          bbox.min.z + (iz + 0.5) * cellSize,
+        );
+
+        let inside = false;
+        for (const mesh of meshes) {
+          raycaster.set(point, rayDirection);
+          const hits = raycaster.intersectObject(mesh, false);
+          if (hits.length % 2 === 1) {
+            inside = true;
+            break;
+          }
+        }
+        if (!inside) continue;
+
+        const rgb = sampleSurface(point, meshes, bvhs, textures, defaults);
+        const colorId = nearestLegoColor(rgb, palette).id;
+
+        voxels.push({
+          coord: [ix, iy, iz],
+          colorId,
+          brickId: 'brick-1x1',
+          rotation: 0,
+        });
+      }
+    }
+  }
+
+  for (const mesh of meshes) {
+    if (mesh.geometry.boundsTree) {
+      (mesh.geometry as unknown as { disposeBoundsTree: () => void }).disposeBoundsTree();
+    }
+  }
+
+  let snapshot: VoxelGridSnapshot = {
+    size: { x: Nx, y: Ny, z: Nz },
+    voxels,
+    baseplate: {
+      width: Math.max(Nx + 2, 16),
+      depth: Math.max(Nz + 2, 8),
+    },
+  };
+
+  if (o.hollow) snapshot = hollowGrid(snapshot);
+  if (o.optimize) snapshot = packBricks(snapshot);
+  return snapshot;
+}

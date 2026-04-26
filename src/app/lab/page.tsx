@@ -2,10 +2,18 @@
 
 import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { LogoMark } from '@/components/logo-mark';
+import { meshToVoxelGrid } from '@/lib/voxelizer/mesh-to-voxel';
+import type { VoxelGridSnapshot } from '@/types/voxel.types';
 
 const MeshViewer = dynamic(
   () => import('@/components/mesh-viewer').then((m) => m.MeshViewer),
+  { ssr: false },
+);
+
+const VoxelPreview = dynamic(
+  () => import('@/components/voxel-preview').then((m) => m.VoxelPreview),
   { ssr: false },
 );
 
@@ -73,6 +81,11 @@ export default function LabPage() {
   const fileSelectedRef = useRef<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<LabResult | null>(null);
+  const [voxelizing, setVoxelizing] = useState(false);
+  const [voxelPlan, setVoxelPlan] = useState<VoxelGridSnapshot | null>(null);
+  const [voxelizeError, setVoxelizeError] = useState<string | null>(null);
+  const [showMode, setShowMode] = useState<'mesh' | 'bricks'>('mesh');
+  const [resolution, setResolution] = useState(28);
 
   function onFile(file: File) {
     fileSelectedRef.current = file;
@@ -86,6 +99,9 @@ export default function LabPage() {
 
     setBusy(true);
     setResult(null);
+    setVoxelPlan(null);
+    setVoxelizeError(null);
+    setShowMode('mesh');
     try {
       const fd = new FormData();
       fd.set('slug', slug);
@@ -103,6 +119,28 @@ export default function LabPage() {
       });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function voxelize() {
+    if (!result?.url) return;
+    setVoxelizing(true);
+    setVoxelizeError(null);
+    try {
+      const loader = new GLTFLoader();
+      const gltf = await loader.loadAsync(result.url);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const plan = meshToVoxelGrid(gltf.scene, {
+        resolution,
+        hollow: true,
+        optimize: true,
+      });
+      setVoxelPlan(plan);
+      setShowMode('bricks');
+    } catch (e) {
+      setVoxelizeError(e instanceof Error ? e.message : 'voxelize failed');
+    } finally {
+      setVoxelizing(false);
     }
   }
 
@@ -255,12 +293,41 @@ export default function LabPage() {
         </aside>
 
         <section className="space-y-3">
-          <div className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-ink-2">
-            Result
+          <div className="flex items-center justify-between">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-ink-2">
+              Result
+            </div>
+            {result?.ok && result.url && (
+              <div className="flex border-2 border-ink shadow-[3px_3px_0_var(--ink)]">
+                <button
+                  type="button"
+                  onClick={() => setShowMode('mesh')}
+                  className={`px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] ${
+                    showMode === 'mesh' ? 'bg-ink text-paper' : 'bg-paper text-ink hover:bg-yellow'
+                  }`}
+                >
+                  Mesh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => voxelPlan && setShowMode('bricks')}
+                  disabled={!voxelPlan}
+                  className={`border-l-2 border-ink px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] ${
+                    showMode === 'bricks' ? 'bg-ink text-paper' : 'bg-paper text-ink hover:bg-yellow'
+                  } disabled:opacity-40`}
+                >
+                  Bricks {voxelPlan ? `· ${voxelPlan.voxels.length}` : ''}
+                </button>
+              </div>
+            )}
           </div>
           <div className="aspect-square w-full overflow-hidden border-2 border-ink bg-paper-2/40">
             {result?.ok && result.url ? (
-              <MeshViewer url={result.url} />
+              showMode === 'bricks' && voxelPlan ? (
+                <VoxelPreview plan={voxelPlan} />
+              ) : (
+                <MeshViewer url={result.url} />
+              )
             ) : (
               <div className="flex h-full items-center justify-center p-6 text-center">
                 {busy ? (
@@ -286,6 +353,46 @@ export default function LabPage() {
               </div>
             )}
           </div>
+
+          {result?.ok && result.url && (
+            <div className="space-y-2 border-2 border-ink bg-paper p-3 shadow-[3px_3px_0_var(--ink)]">
+              <div className="flex items-baseline justify-between">
+                <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink-2">
+                  → Convert mesh to Lego bricks
+                </div>
+                <div className="font-mono text-[10px] text-ink-2">
+                  Resolution: <span className="font-bold text-red">{resolution}</span>
+                </div>
+              </div>
+              <input
+                type="range"
+                min={16}
+                max={48}
+                step={1}
+                value={resolution}
+                onChange={(e) => setResolution(Number(e.target.value))}
+                className="w-full"
+                disabled={voxelizing}
+              />
+              <button
+                type="button"
+                onClick={voxelize}
+                disabled={voxelizing}
+                className="press w-full bg-red px-4 py-2.5 font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
+              >
+                {voxelizing ? 'Voxelizing… (BVH raycast)' : 'Voxelize this mesh →'}
+              </button>
+              {voxelizeError && (
+                <div className="font-mono text-[10px] text-red">{voxelizeError}</div>
+              )}
+              {voxelPlan && !voxelizing && (
+                <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                  {voxelPlan.voxels.length} pieces · {voxelPlan.size.x}×{voxelPlan.size.y}×
+                  {voxelPlan.size.z}
+                </div>
+              )}
+            </div>
+          )}
 
           {result?.ok && (
             <div className="grid grid-cols-3 gap-2">
