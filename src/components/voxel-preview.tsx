@@ -2,65 +2,93 @@
 
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import * as THREE from 'three';
 import { PALETTE } from '@/lib/palette';
-import type { VoxelGridSnapshot } from '@/types/voxel.types';
+import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
 
 const colorByIdHex: Record<string, string> = Object.fromEntries(
   PALETTE.map((c) => [c.id, `#${c.hex}`]),
 );
 
+function VoxelInstancedGroup({ colorId, voxels }: { colorId: string; voxels: Voxel[] }) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const count = voxels.length;
+  const color = colorByIdHex[colorId] ?? '#888888';
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < count; i++) {
+      const v = voxels[i];
+      dummy.position.set(v.coord[0], v.coord[1] + 0.5, v.coord[2]);
+      dummy.updateMatrix();
+      meshRef.current.setMatrixAt(i, dummy.matrix);
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  }, [voxels, count]);
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, count]}
+      castShadow
+      receiveShadow
+    >
+      <boxGeometry args={[0.96, 0.96, 0.96]} />
+      <meshStandardMaterial color={color} roughness={0.5} metalness={0.05} />
+    </instancedMesh>
+  );
+}
+
 export function VoxelPreview({ plan }: { plan: VoxelGridSnapshot }) {
   const center = useMemo(
     () => ({
-      x: plan.baseplate.width / 2 - 0.5,
-      y: 0,
-      z: plan.baseplate.depth / 2 - 0.5,
+      x: plan.size.x / 2 - 0.5,
+      y: plan.size.y / 2,
+      z: plan.size.z / 2 - 0.5,
     }),
-    [plan.baseplate.width, plan.baseplate.depth],
+    [plan.size.x, plan.size.y, plan.size.z],
   );
 
-  const cameraDistance = Math.max(plan.baseplate.width, plan.baseplate.depth, plan.size.y) * 1.6;
+  const groups = useMemo(() => {
+    const m = new Map<string, Voxel[]>();
+    for (const v of plan.voxels) {
+      const arr = m.get(v.colorId) ?? [];
+      arr.push(v);
+      m.set(v.colorId, arr);
+    }
+    return Array.from(m.entries());
+  }, [plan.voxels]);
+
+  const cameraDistance = Math.max(plan.size.x, plan.size.y) * 1.6;
 
   return (
     <Canvas shadows dpr={[1, 2]} className="rounded-lg">
       <color attach="background" args={['#0e0f12']} />
       <PerspectiveCamera
         makeDefault
-        position={[center.x + cameraDistance, cameraDistance * 0.8, center.z + cameraDistance]}
+        position={[center.x + cameraDistance * 0.7, center.y + cameraDistance * 0.5, cameraDistance]}
         fov={40}
       />
-      <OrbitControls target={[center.x, plan.size.y / 2, center.z]} makeDefault />
-      <ambientLight intensity={0.55} />
+      <OrbitControls target={[center.x, center.y, center.z]} makeDefault />
+      <ambientLight intensity={0.6} />
       <directionalLight
-        position={[center.x + 20, 30, center.z + 20]}
-        intensity={1.1}
+        position={[center.x + 30, 40, center.z + 30]}
+        intensity={1.2}
         castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
       />
       <hemisphereLight args={['#bbd8ff', '#3a2d20', 0.4]} />
 
-      <mesh
-        position={[center.x, -0.6, center.z]}
-        receiveShadow
-      >
+      <mesh position={[center.x, -0.6, center.z]} receiveShadow>
         <boxGeometry args={[plan.baseplate.width, 0.2, plan.baseplate.depth]} />
         <meshStandardMaterial color="#3a3d44" roughness={0.85} />
       </mesh>
 
-      {plan.voxels.map((v, i) => (
-        <mesh
-          key={`${v.coord[0]}-${v.coord[1]}-${v.coord[2]}-${i}`}
-          position={[v.coord[0], v.coord[1] + 0.5, v.coord[2]]}
-          castShadow
-          receiveShadow
-        >
-          <boxGeometry args={[0.96, 0.96, 0.96]} />
-          <meshStandardMaterial
-            color={colorByIdHex[v.colorId] ?? '#888'}
-            roughness={0.5}
-            metalness={0.05}
-          />
-        </mesh>
+      {groups.map(([colorId, voxels]) => (
+        <VoxelInstancedGroup key={colorId} colorId={colorId} voxels={voxels} />
       ))}
     </Canvas>
   );

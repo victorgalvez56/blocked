@@ -1,17 +1,17 @@
 import type { BuildType } from '@/types/generation-job.types';
 
 const STYLE_ANCHOR =
-  'Solid flat colors, very low color count (max 8 colors), hard edges, no gradient shading, no perspective foreshortening, plain white background, centered subject, isolated on background, no text or watermark.';
+  'Voxel art style, blocky cube-based geometry, like a Minecraft or MagicaVoxel render. Solid flat colors only — no gradient shading, no smooth surfaces, no anti-aliasing, no soft lighting. Maximum 6 distinct colors total. Hard pixelated edges. Pure white seamless background. Single isolated subject perfectly centered with margin. Simple iconic silhouette. No text, no watermark, no logos, no shadows on the background. Render at low resolution feel — chunky pixels, ~32x32 effective grid.';
 
 export function dallePromptFor(buildType: BuildType, userPrompt: string): string {
-  const sanitized = userPrompt.trim().slice(0, 400);
+  const sanitized = userPrompt.trim().slice(0, 200);
   switch (buildType) {
     case 'figure':
-      return `A 3D toy block figurine of: ${sanitized}. Front-facing 3/4 isometric view, simple blocky shape suitable for voxelization, single subject only. ${STYLE_ANCHOR}`;
+      return `Voxel art of a single ${sanitized}, front-facing view, body fully visible from head to feet, fits within frame with margin. ${STYLE_ANCHOR}`;
     case 'basrelief':
-      return `A flat front-facing illustration of: ${sanitized}. High contrast, poster-style, suitable as a tile mosaic reference. ${STYLE_ANCHOR}`;
+      return `Voxel art icon of ${sanitized}, flat front-facing pose, simple readable silhouette like a video game sprite. ${STYLE_ANCHOR}`;
     case 'diorama':
-      return `A small 3D toy block diorama scene of: ${sanitized}. Figure on a clear ground plane, low contextual detail, blocky simple forms. ${STYLE_ANCHOR}`;
+      return `Voxel art of ${sanitized} standing on a small simple base, front-facing 3/4 view. ${STYLE_ANCHOR}`;
   }
 }
 

@@ -14,9 +14,9 @@ export interface VoxelizeOpts {
 }
 
 const DEFAULTS = {
-  gridSize: 24,
-  maxDepth: 6,
-  backgroundThreshold: 38,
+  gridSize: 28,
+  maxDepth: 3,
+  backgroundThreshold: 50,
 };
 
 interface PixelInfo {
@@ -63,12 +63,8 @@ function detectBackground(data: Buffer, width: number, height: number): RGB {
 
 function depthForPixel(rgb: RGB, buildType: BuildType, maxDepth: number): number {
   const lum = (rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114) / 255;
-  if (buildType === 'basrelief') {
-    return Math.max(1, Math.round((1 - lum) * maxDepth));
-  }
   if (buildType === 'figure') {
-    const base = Math.max(2, Math.round((1 - lum) * maxDepth) + 1);
-    return Math.min(maxDepth, base);
+    return maxDepth;
   }
   return Math.max(1, Math.round((1 - lum) * maxDepth));
 }
