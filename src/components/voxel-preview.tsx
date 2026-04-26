@@ -36,7 +36,7 @@ function VoxelInstancedGroup({ colorId, voxels }: { colorId: string; voxels: Vox
       receiveShadow
     >
       <boxGeometry args={[0.96, 0.96, 0.96]} />
-      <meshStandardMaterial color={color} roughness={0.5} metalness={0.05} />
+      <meshStandardMaterial color={color} roughness={0.55} metalness={0.04} />
     </instancedMesh>
   );
 }
@@ -61,30 +61,42 @@ export function VoxelPreview({ plan }: { plan: VoxelGridSnapshot }) {
     return Array.from(m.entries());
   }, [plan.voxels]);
 
-  const cameraDistance = Math.max(plan.size.x, plan.size.y) * 1.6;
+  const cameraDistance = Math.max(plan.size.x, plan.size.y) * 1.65;
 
   return (
-    <Canvas shadows dpr={[1, 2]} className="rounded-lg">
-      <color attach="background" args={['#0e0f12']} />
+    <Canvas shadows dpr={[1, 2]} className="block">
+      <color attach="background" args={['#f2ebdd']} />
       <PerspectiveCamera
         makeDefault
-        position={[center.x + cameraDistance * 0.7, center.y + cameraDistance * 0.5, cameraDistance]}
-        fov={40}
+        position={[
+          center.x + cameraDistance * 0.7,
+          center.y + cameraDistance * 0.55,
+          cameraDistance,
+        ]}
+        fov={38}
       />
-      <OrbitControls target={[center.x, center.y, center.z]} makeDefault />
-      <ambientLight intensity={0.6} />
+      <OrbitControls
+        target={[center.x, center.y, center.z]}
+        makeDefault
+        enableDamping
+        dampingFactor={0.08}
+        autoRotate
+        autoRotateSpeed={0.6}
+      />
+      <ambientLight intensity={0.65} />
       <directionalLight
-        position={[center.x + 30, 40, center.z + 30]}
-        intensity={1.2}
+        position={[center.x + 30, 45, center.z + 25]}
+        intensity={1.1}
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
-      <hemisphereLight args={['#bbd8ff', '#3a2d20', 0.4]} />
+      <directionalLight position={[-20, 18, -10]} intensity={0.35} color="#bbd8ff" />
+      <hemisphereLight args={['#ffffff', '#988366', 0.35]} />
 
-      <mesh position={[center.x, -0.6, center.z]} receiveShadow>
-        <boxGeometry args={[plan.baseplate.width, 0.2, plan.baseplate.depth]} />
-        <meshStandardMaterial color="#3a3d44" roughness={0.85} />
+      <mesh position={[center.x, -0.55, center.z]} receiveShadow>
+        <boxGeometry args={[plan.baseplate.width, 0.18, plan.baseplate.depth]} />
+        <meshStandardMaterial color="#14161f" roughness={0.95} />
       </mesh>
 
       {groups.map(([colorId, voxels]) => (
