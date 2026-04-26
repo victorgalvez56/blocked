@@ -15,6 +15,17 @@ import {
 import { voxelizeMultiview } from '@/lib/voxelizer/multiview';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
 
+async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('failed to load remote image'));
+    img.src = url;
+  });
+  return img;
+}
+
 type SourceMode = 'single' | 'multiview';
 type ViewKey = 'front' | 'side' | 'back' | 'top';
 const VIEW_KEYS: ViewKey[] = ['front', 'side', 'back', 'top'];
@@ -62,6 +73,9 @@ export function ImageRunner() {
   const [busy, setBusy] = useState(false);
   const [stamp, setStamp] = useState('—');
   const [layerCap, setLayerCap] = useState<number>(99);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const revealTweenRef = useRef<gsap.core.Tween | null>(null);
 
   useEffect(() => {
@@ -182,6 +196,30 @@ export function ImageRunner() {
     }
   }
 
+  async function generateFromText() {
+    if (aiPrompt.trim().length < 3) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const res = await fetch('/api/dalle-image', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: aiPrompt.trim() }),
+      });
+      const data = (await res.json()) as { ok: boolean; url?: string; error?: string };
+      if (!data.ok || !data.url) {
+        throw new Error(data.error ?? 'DALL·E failed');
+      }
+      const img = await loadImageFromUrl(data.url);
+      setSingle({ el: img, url: data.url });
+      setMode('single');
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'generation failed');
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   function update<K extends keyof ClientVoxelizeOpts>(key: K, value: ClientVoxelizeOpts[K]) {
     setOpts((prev) => ({ ...prev, [key]: value }));
   }
@@ -225,10 +263,44 @@ export function ImageRunner() {
             <ModeSwitch mode={mode} onChange={setMode} />
 
             {mode === 'single' && (
-              <DropZone
-                imageUrl={single?.url ?? null}
-                onFile={loadSingle}
-              />
+              <>
+                <DropZone
+                  imageUrl={single?.url ?? null}
+                  onFile={loadSingle}
+                />
+
+                <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
+                    ↳ or generate with AI
+                  </div>
+                  <textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    rows={2}
+                    placeholder="a cute red dragon"
+                    className="w-full resize-none border-2 border-ink bg-paper px-2.5 py-1.5 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
+                    disabled={aiBusy}
+                    maxLength={300}
+                  />
+                  <button
+                    type="button"
+                    onClick={generateFromText}
+                    disabled={aiBusy || aiPrompt.trim().length < 3}
+                    className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
+                  >
+                    {aiBusy ? 'DALL·E generating… (~10s)' : 'Generate image →'}
+                  </button>
+                  {aiError && (
+                    <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
+                      <span className="font-bold uppercase tracking-[0.14em] text-red">Error</span>{' '}
+                      <span>{aiError}</span>
+                    </div>
+                  )}
+                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                    text → DALL·E ($0.04) → drops in above → auto-voxelizes
+                  </div>
+                </div>
+              </>
             )}
 
             {mode === 'multiview' && (
