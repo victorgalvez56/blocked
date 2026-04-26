@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import gsap from 'gsap';
 import { VoxelPreview } from './voxel-preview';
 import { LogoMark } from './logo-mark';
 import { BomPanel } from './bom-panel';
@@ -40,6 +41,7 @@ export function ImageRunner() {
   const [layerCap, setLayerCap] = useState<number>(99);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<HTMLDivElement>(null);
+  const revealTweenRef = useRef<gsap.core.Tween | null>(null);
 
   useEffect(() => {
     setStamp(nowStamp());
@@ -48,8 +50,43 @@ export function ImageRunner() {
   }, []);
 
   useEffect(() => {
-    if (plan) setLayerCap(plan.size.y - 1);
-  }, [plan?.size.y, plan?.voxels.length]);
+    if (!plan) return;
+    revealTweenRef.current?.kill();
+    revealTweenRef.current = null;
+
+    const target = plan.size.y - 1;
+
+    const reduce =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || target <= 0) {
+      setLayerCap(target);
+      return;
+    }
+
+    setLayerCap(0);
+    const obj = { v: 0 };
+    let lastCap = -1;
+    revealTweenRef.current = gsap.to(obj, {
+      v: target,
+      duration: Math.min(0.55 + target * 0.075, 1.6),
+      ease: 'power1.out',
+      onUpdate: () => {
+        const c = Math.floor(obj.v);
+        if (c !== lastCap) {
+          lastCap = c;
+          setLayerCap(c);
+        }
+      },
+      onComplete: () => {
+        setLayerCap(target);
+      },
+    });
+
+    return () => {
+      revealTweenRef.current?.kill();
+    };
+  }, [plan]);
 
   const slicedPlan = useMemo<VoxelGridSnapshot | null>(() => {
     if (!plan) return null;
@@ -286,7 +323,10 @@ export function ImageRunner() {
                       min={0}
                       max={plan.size.y - 1}
                       value={Math.min(layerCap, plan.size.y - 1)}
-                      onChange={(e) => setLayerCap(Number(e.target.value))}
+                      onChange={(e) => {
+                        revealTweenRef.current?.kill();
+                        setLayerCap(Number(e.target.value));
+                      }}
                       className="flex-1"
                     />
                     <span className="numeric shrink-0 text-[14px] font-bold leading-none text-red">
@@ -297,7 +337,10 @@ export function ImageRunner() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => setLayerCap(plan.size.y - 1)}
+                      onClick={() => {
+                        revealTweenRef.current?.kill();
+                        setLayerCap(plan.size.y - 1);
+                      }}
                       disabled={layerCap >= plan.size.y - 1}
                       className="press bg-paper px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-ink"
                     >
