@@ -166,10 +166,11 @@ function sampleSurface(
   return bestRgb;
 }
 
-export function meshToVoxelGrid(
+export async function meshToVoxelGrid(
   scene: THREE.Object3D,
   opts: Partial<MeshToVoxelOpts> = {},
-): VoxelGridSnapshot {
+  onProgress?: (pct: number) => void,
+): Promise<VoxelGridSnapshot> {
   patchThree();
   const o: MeshToVoxelOpts = { ...DEFAULT_MESH_OPTS, ...opts };
 
@@ -227,17 +228,24 @@ export function meshToVoxelGrid(
           bbox.min.z + (iz + 0.5) * cellSize,
         );
 
-        // Multi-ray inside test: cast 3 rays along axes, count odd-intersection votes
+        // Multi-ray inside test with early exit
         let votes = 0;
+        let antiVotes = 0;
         for (const dir of rayDirs) {
           let totalHits = 0;
           for (const mesh of meshes) {
             raycaster.set(point, dir);
             totalHits += raycaster.intersectObject(mesh, false).length;
           }
-          if (totalHits % 2 === 1) votes++;
+          if (totalHits % 2 === 1) {
+            votes++;
+            if (votes >= 2) break;
+          } else {
+            antiVotes++;
+            if (antiVotes >= 2) break;
+          }
         }
-        if (votes < 2) continue; // need majority of 3
+        if (votes < 2) continue;
 
         const rgb = sampleSurface(point, meshes, bvhs, textures, defaults);
         const colorId = nearestLegoColor(rgb, palette).id;
@@ -249,6 +257,12 @@ export function meshToVoxelGrid(
           rotation: 0,
         });
       }
+    }
+
+    // Yield to the browser so the UI stays responsive
+    if (iy % 2 === 1 || iy === Ny - 1) {
+      onProgress?.(iy / (Ny - 1));
+      await new Promise<void>((r) => setTimeout(r, 0));
     }
   }
 

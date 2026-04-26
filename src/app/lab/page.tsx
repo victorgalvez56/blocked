@@ -89,6 +89,7 @@ export default function LabPage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<LabResult | null>(null);
   const [voxelizing, setVoxelizing] = useState(false);
+  const [voxelProgress, setVoxelProgress] = useState(0);
   const [voxelPlan, setVoxelPlan] = useState<VoxelGridSnapshot | null>(null);
   const [voxelizeError, setVoxelizeError] = useState<string | null>(null);
   const [showMode, setShowMode] = useState<'mesh' | 'bricks'>('mesh');
@@ -137,21 +138,23 @@ export default function LabPage() {
     if (!result?.url) return;
     setVoxelizing(true);
     setVoxelizeError(null);
+    setVoxelProgress(0);
     try {
       const loader = new GLTFLoader();
       const gltf = await loader.loadAsync(result.url);
       await new Promise((r) => requestAnimationFrame(() => r(null)));
-      const plan = meshToVoxelGrid(gltf.scene, {
-        resolution,
-        hollow: true,
-        optimize: true,
-      });
+      const plan = await meshToVoxelGrid(
+        gltf.scene,
+        { resolution, hollow: true, optimize: true },
+        (pct) => setVoxelProgress(pct),
+      );
       setVoxelPlan(plan);
       setShowMode('bricks');
     } catch (e) {
       setVoxelizeError(e instanceof Error ? e.message : 'voxelize failed');
     } finally {
       setVoxelizing(false);
+      setVoxelProgress(0);
     }
   }
 
@@ -426,8 +429,18 @@ export default function LabPage() {
                 disabled={voxelizing}
                 className="press w-full bg-red px-4 py-2.5 font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
               >
-                {voxelizing ? 'Voxelizing… (BVH raycast)' : 'Voxelize this mesh →'}
+                {voxelizing
+                  ? `Voxelizing… ${Math.round(voxelProgress * 100)}%`
+                  : 'Voxelize this mesh →'}
               </button>
+              {voxelizing && (
+                <div className="h-1 w-full border border-ink bg-paper">
+                  <div
+                    className="h-full bg-red transition-[width] duration-150"
+                    style={{ width: `${Math.round(voxelProgress * 100)}%` }}
+                  />
+                </div>
+              )}
               {voxelizeError && (
                 <div className="font-mono text-[10px] text-red">{voxelizeError}</div>
               )}
