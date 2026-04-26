@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VoxelPreview } from './voxel-preview';
 import { LogoMark } from './logo-mark';
+import { BomPanel } from './bom-panel';
 import {
   DEFAULT_OPTS,
   loadImageElement,
@@ -36,6 +37,7 @@ export function ImageRunner() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [stamp, setStamp] = useState('—');
+  const [layerCap, setLayerCap] = useState<number>(99);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +46,19 @@ export function ImageRunner() {
     const id = setInterval(() => setStamp(nowStamp()), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (plan) setLayerCap(plan.size.y - 1);
+  }, [plan?.size.y, plan?.voxels.length]);
+
+  const slicedPlan = useMemo<VoxelGridSnapshot | null>(() => {
+    if (!plan) return null;
+    if (layerCap >= plan.size.y - 1) return plan;
+    return {
+      ...plan,
+      voxels: plan.voxels.filter((v) => v.coord[1] <= layerCap),
+    };
+  }, [plan, layerCap]);
 
   const runVoxelize = useCallback(async (img: HTMLImageElement, o: ClientVoxelizeOpts) => {
     setBusy(true);
@@ -109,7 +124,7 @@ export function ImageRunner() {
       </header>
 
       {/* MAIN GRID */}
-      <main className="relative grid grid-cols-1 lg:grid-cols-[360px_1fr]">
+      <main className="relative grid grid-cols-1 lg:grid-cols-[340px_1fr_300px]">
         {/* SIDEBAR — controls */}
         <aside className="border-b-2 border-ink bg-paper-2/40 lg:border-b-0 lg:border-r-2">
           <div className="p-6 md:p-7 space-y-6">
@@ -258,23 +273,45 @@ export function ImageRunner() {
                 </div>
 
                 <div className="h-full w-full overflow-hidden">
-                  {plan ? (
-                    <VoxelPreview plan={plan} />
-                  ) : (
-                    <EmptyState />
-                  )}
+                  {slicedPlan ? <VoxelPreview plan={slicedPlan} /> : <EmptyState />}
                 </div>
 
-                <div className="absolute -bottom-7 left-0 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-2">
-                  Drag · scroll to zoom
-                </div>
-                <div className="absolute -bottom-7 right-0 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-2">
-                  Auto-rotating
-                </div>
+                {plan && plan.size.y > 1 && (
+                  <div className="absolute -bottom-16 left-0 right-0 flex items-center gap-3 border-2 border-ink bg-paper px-4 py-2.5 shadow-[4px_4px_0_var(--ink)]">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink">
+                      Slice ↕
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={plan.size.y - 1}
+                      value={Math.min(layerCap, plan.size.y - 1)}
+                      onChange={(e) => setLayerCap(Number(e.target.value))}
+                      className="flex-1"
+                    />
+                    <span className="numeric shrink-0 text-[14px] font-bold leading-none text-red">
+                      {Math.min(layerCap, plan.size.y - 1) + 1}
+                      <span className="ml-1 font-mono text-[10px] text-ink-2">
+                        / {plan.size.y}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLayerCap(plan.size.y - 1)}
+                      disabled={layerCap >= plan.size.y - 1}
+                      className="press bg-paper px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-ink"
+                    >
+                      All
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </section>
+
+        {/* BOM column */}
+        <BomPanel plan={plan} />
       </main>
     </div>
   );
