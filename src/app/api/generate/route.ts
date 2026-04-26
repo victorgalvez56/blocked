@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { generateRequestSchema } from '@/lib/validators/generate-request';
 import { generateReferenceImage } from '@/lib/openai/dalle';
-import { imageToVoxelPlan } from '@/lib/openai/gpt-vision';
+import { voxelizeImageFromUrl } from '@/lib/voxelizer/image-to-grid';
 import { checkBudget, recordSpend } from '@/lib/utils/rate-limit';
 import { jobId } from '@/lib/utils/nanoid';
 import { PALETTE_VERSION } from '@/lib/palette';
@@ -10,7 +10,7 @@ import type { GenerateApiResponse } from '@/types/api.types';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const ESTIMATED_COST_SINGLE_VIEW = 0.105;
+const ESTIMATED_COST_SINGLE_VIEW = 0.08;
 
 export async function POST(req: Request): Promise<NextResponse<GenerateApiResponse>> {
   let body: unknown;
@@ -44,29 +44,24 @@ export async function POST(req: Request): Promise<NextResponse<GenerateApiRespon
   }
 
   try {
-    const { prompt, buildType, maxBricks } = parsed.data;
+    const { prompt, buildType } = parsed.data;
 
     const dalle = await generateReferenceImage({ prompt, buildType });
     recordSpend(dalle.costUsd);
 
-    const vision = await imageToVoxelPlan({
-      imageUrl: dalle.imageUrl,
-      buildType,
-      maxBricks,
-    });
-    recordSpend(vision.costUsd);
+    const voxelPlan = await voxelizeImageFromUrl(dalle.imageUrl, { buildType });
 
     return NextResponse.json({
       ok: true,
       result: {
         jobId: jobId(),
         imageUrl: dalle.imageUrl,
-        voxelPlan: vision.plan,
+        voxelPlan,
         promptUsed: dalle.promptUsed,
         buildType,
         generationMode: 'ai',
         paletteVersion: PALETTE_VERSION,
-        costUsd: dalle.costUsd + vision.costUsd,
+        costUsd: dalle.costUsd,
         createdAt: Date.now(),
       },
     });
