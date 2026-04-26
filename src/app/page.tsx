@@ -1,9 +1,9 @@
-import { PromptRunner } from '@/components/prompt-runner';
+import { ImageRunner } from '@/components/image-runner';
 
 export default function Home() {
   return (
     <main className="min-h-dvh bg-black text-white">
-      <PromptRunner />
+      <ImageRunner />
     </main>
   );
 }
