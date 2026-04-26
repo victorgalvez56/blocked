@@ -213,6 +213,12 @@ export function ImageRunner() {
       const img = await loadImageFromUrl(data.url);
       setSingle({ el: img, url: data.url });
       setMode('single');
+      // Auto-tune for "object" feel — chibi/AI subjects look thin at default depth
+      setOpts((prev) => ({
+        ...prev,
+        maxDepth: Math.max(prev.maxDepth, 16),
+        mirror: true,
+      }));
     } catch (e) {
       setAiError(e instanceof Error ? e.message : 'generation failed');
     } finally {
@@ -339,7 +345,7 @@ export function ImageRunner() {
               suffix=""
               value={opts.maxDepth}
               min={1}
-              max={8}
+              max={24}
               step={1}
               onChange={(v) => update('maxDepth', v)}
             />
