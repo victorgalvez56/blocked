@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "source": "Canonical BrickLink part numbers (well-established, stable since the original Lego brick releases). Verify against bricklink.com before production BOM export.",
+  "unit": {
+    "studMm": 8,
+    "plateHeightMm": 3.2,
+    "brickHeightMm": 9.6,
+    "comment": "1 brick = 3 plates tall. Stud pitch = 8mm."
+  },
+  "pieces": [
+    { "id": "brick-1x1", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 1, "plateHeight": 3 }, "bricklinkPartId": "3005", "legoDesignId": "3005", "category": "core" },
+    { "id": "brick-1x2", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 2, "plateHeight": 3 }, "bricklinkPartId": "3004", "legoDesignId": "3004", "category": "core" },
+    { "id": "brick-1x3", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 3, "plateHeight": 3 }, "bricklinkPartId": "3622", "legoDesignId": "3622", "category": "core" },
+    { "id": "brick-1x4", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 4, "plateHeight": 3 }, "bricklinkPartId": "3010", "legoDesignId": "3010", "category": "core" },
+    { "id": "brick-1x6", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 6, "plateHeight": 3 }, "bricklinkPartId": "3009", "legoDesignId": "3009", "category": "core" },
+    { "id": "brick-1x8", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 8, "plateHeight": 3 }, "bricklinkPartId": "3008", "legoDesignId": "3008", "category": "core" },
+    { "id": "brick-2x2", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 2, "plateHeight": 3 }, "bricklinkPartId": "3003", "legoDesignId": "3003", "category": "core" },
+    { "id": "brick-2x3", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 3, "plateHeight": 3 }, "bricklinkPartId": "3002", "legoDesignId": "3002", "category": "core" },
+    { "id": "brick-2x4", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 4, "plateHeight": 3 }, "bricklinkPartId": "3001", "legoDesignId": "3001", "category": "core" },
+    { "id": "brick-2x6", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 6, "plateHeight": 3 }, "bricklinkPartId": "2456", "legoDesignId": "2456", "category": "optional" },
+    { "id": "brick-2x8", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 8, "plateHeight": 3 }, "bricklinkPartId": "3007", "legoDesignId": "3007", "category": "optional" },
+    { "id": "plate-1x1", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 1, "plateHeight": 1 }, "bricklinkPartId": "3024", "legoDesignId": "3024", "category": "core" },
+    { "id": "plate-1x2", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 2, "plateHeight": 1 }, "bricklinkPartId": "3023", "legoDesignId": "3023", "category": "core" },
+    { "id": "plate-1x3", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 3, "plateHeight": 1 }, "bricklinkPartId": "3623", "legoDesignId": "3623", "category": "core" },
+    { "id": "plate-1x4", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 4, "plateHeight": 1 }, "bricklinkPartId": "3710", "legoDesignId": "3710", "category": "core" },
+    { "id": "plate-1x6", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 6, "plateHeight": 1 }, "bricklinkPartId": "3666", "legoDesignId": "3666", "category": "core" },
+    { "id": "plate-1x8", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 8, "plateHeight": 1 }, "bricklinkPartId": "3460", "legoDesignId": "3460", "category": "core" },
+    { "id": "plate-2x2", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 2, "plateHeight": 1 }, "bricklinkPartId": "3022", "legoDesignId": "3022", "category": "core" },
+    { "id": "plate-2x3", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 3, "plateHeight": 1 }, "bricklinkPartId": "3021", "legoDesignId": "3021", "category": "core" },
+    { "id": "plate-2x4", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 4, "plateHeight": 1 }, "bricklinkPartId": "3020", "legoDesignId": "3020", "category": "core" },
+    { "id": "plate-2x6", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 6, "plateHeight": 1 }, "bricklinkPartId": "3795", "legoDesignId": "3795", "category": "optional" },
+    { "id": "plate-2x8", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 8, "plateHeight": 1 }, "bricklinkPartId": "3034", "legoDesignId": "3034", "category": "optional" }
+  ]
+}
