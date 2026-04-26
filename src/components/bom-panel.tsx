@@ -2,10 +2,48 @@
 
 import { useMemo } from 'react';
 import { buildBomEntries, type BomEntry } from '@/lib/bom';
+import { BrickIcon } from './brick-icon';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
+
+interface BrickGroup {
+  brickId: string;
+  brickLabel: string;
+  bricklinkPartId: string | null;
+  totalCount: number;
+  totalArea: number;
+  colorEntries: BomEntry[];
+}
+
+function groupByBrick(entries: BomEntry[]): BrickGroup[] {
+  const m = new Map<string, BrickGroup>();
+  for (const e of entries) {
+    const g = m.get(e.brickId);
+    if (g) {
+      g.colorEntries.push(e);
+      g.totalCount += e.count;
+    } else {
+      m.set(e.brickId, {
+        brickId: e.brickId,
+        brickLabel: e.brickLabel,
+        bricklinkPartId: e.bricklinkPartId,
+        totalCount: e.count,
+        totalArea: e.area,
+        colorEntries: [e],
+      });
+    }
+  }
+  const arr = Array.from(m.values());
+  for (const g of arr) g.colorEntries.sort((a, b) => b.count - a.count);
+  arr.sort((a, b) => {
+    if (b.totalArea !== a.totalArea) return b.totalArea - a.totalArea;
+    return b.totalCount - a.totalCount;
+  });
+  return arr;
+}
 
 export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
   const entries = useMemo<BomEntry[]>(() => (plan ? buildBomEntries(plan) : []), [plan]);
+  const groups = useMemo<BrickGroup[]>(() => groupByBrick(entries), [entries]);
   const total = entries.reduce((s, e) => s + e.count, 0);
 
   return (
@@ -41,34 +79,59 @@ export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
               </span>
             </div>
 
-            <ul className="-mx-1 max-h-[calc(100vh-300px)] space-y-1.5 overflow-y-auto pr-1">
-              {entries.map((e) => (
-                <li
-                  key={e.key}
-                  className="flex items-center gap-2 border-2 border-ink bg-paper px-2 py-1.5"
-                >
-                  <span
-                    className="block h-6 w-6 shrink-0 border-2 border-ink"
-                    style={{ background: e.colorHex }}
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12px] font-bold leading-tight text-ink">
-                      {e.brickLabel}
+            <ul className="-mx-1 max-h-[calc(100vh-280px)] space-y-3 overflow-y-auto pr-1">
+              {groups.map((g) => (
+                <li key={g.brickId} className="border-2 border-ink bg-paper">
+                  <header className="flex items-center gap-3 border-b-2 border-ink bg-paper-2/60 px-3 py-2">
+                    <BrickIcon brickId={g.brickId} color="#e8dfcb" size={42} />
+                    <div className="min-w-0 flex-1">
+                      <div className="display-xl truncate text-[14px] uppercase tracking-tight text-ink">
+                        {g.brickLabel}
+                      </div>
+                      <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-2">
+                        {g.colorEntries.length} color{g.colorEntries.length === 1 ? '' : 's'}
+                        {g.bricklinkPartId && (
+                          <span className="ml-1.5">· #{g.bricklinkPartId}</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="truncate font-mono text-[9px] uppercase tracking-[0.12em] text-ink-2">
-                      {e.colorName}
-                      {e.bricklinkPartId && <span className="ml-1">· #{e.bricklinkPartId}</span>}
+                    <div className="numeric shrink-0 text-right">
+                      <div className="text-[18px] font-bold leading-none text-red">
+                        {g.totalCount}
+                      </div>
+                      <div className="font-mono text-[8px] uppercase tracking-[0.18em] text-ink-2">
+                        pcs
+                      </div>
                     </div>
-                  </div>
-                  <span className="numeric shrink-0 text-[14px] font-bold leading-none text-ink">
-                    ×{e.count}
-                  </span>
+                  </header>
+
+                  <ul className="divide-y divide-line">
+                    {g.colorEntries.map((c) => (
+                      <li
+                        key={c.key}
+                        className="flex items-center gap-2.5 px-3 py-1.5"
+                      >
+                        <BrickIcon brickId={c.brickId} color={c.colorHex} size={32} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] font-bold leading-tight text-ink">
+                            {c.colorName}
+                          </div>
+                          <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                            #{c.colorHex.replace('#', '').toUpperCase()}
+                          </div>
+                        </div>
+                        <span className="numeric shrink-0 text-[13px] font-bold leading-none text-ink">
+                          ×{c.count}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
 
             <div className="border-t border-dashed border-line-strong pt-2 font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-2">
+              {groups.length} unique size{groups.length === 1 ? '' : 's'} ·{' '}
               {entries.length} unique part{entries.length === 1 ? '' : 's'}
             </div>
           </>
