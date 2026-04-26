@@ -13,12 +13,14 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@gsap/react": "^2.1.2",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "gsap": "^3.15.0",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^1.11.0",
     "nanoid": "^5.1.9",

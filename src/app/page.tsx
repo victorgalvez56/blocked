@@ -1,9 +1,5 @@
-import { ImageRunner } from '@/components/image-runner';
+import { Landing } from '@/components/landing';
 
 export default function Home() {
-  return (
-    <main className="min-h-dvh bg-black text-white">
-      <ImageRunner />
-    </main>
-  );
+  return <Landing />;
 }
