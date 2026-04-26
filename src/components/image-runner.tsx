@@ -273,6 +273,12 @@ export function ImageRunner() {
                 checked={opts.optimize}
                 onChange={(v) => update('optimize', v)}
               />
+              <ToggleRow
+                label="Hollow interior"
+                hint="Skip pieces no one will ever see"
+                checked={opts.hollow}
+                onChange={(v) => update('hollow', v)}
+              />
             </div>
 
             <Divider />

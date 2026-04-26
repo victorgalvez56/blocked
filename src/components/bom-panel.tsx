@@ -2,8 +2,21 @@
 
 import { useMemo } from 'react';
 import { buildBomEntries, type BomEntry } from '@/lib/bom';
+import { buildBricklinkXml, buildPlainCsv } from '@/lib/exporters/bricklink-xml';
 import { BrickIcon } from './brick-icon';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
+
+function downloadBlob(content: string, filename: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 interface BrickGroup {
   brickId: string;
@@ -133,6 +146,37 @@ export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
             <div className="border-t border-dashed border-line-strong pt-2 font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-2">
               {groups.length} unique size{groups.length === 1 ? '' : 's'} ·{' '}
               {entries.length} unique part{entries.length === 1 ? '' : 's'}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <div className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-ink-2">
+                Export
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = buildBricklinkXml(plan);
+                    downloadBlob(r.xml, 'blocked-build.bsx', 'application/xml');
+                  }}
+                  className="press flex-1 bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-ink"
+                >
+                  BrickLink XML
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const csv = buildPlainCsv(plan);
+                    downloadBlob(csv, 'blocked-build.csv', 'text/csv');
+                  }}
+                  className="press bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-ink"
+                >
+                  CSV
+                </button>
+              </div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                Paste .bsx into BrickLink Wanted List
+              </div>
             </div>
           </>
         )}

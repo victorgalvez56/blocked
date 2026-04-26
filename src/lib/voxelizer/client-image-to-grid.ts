@@ -1,6 +1,7 @@
 import { availableColors } from '@/lib/palette';
 import { nearestLegoColor } from '@/lib/color/nearest-lego';
 import { packBricks } from './brick-packer';
+import { hollowGrid } from './hollow';
 import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
 import type { RGB } from '@/lib/color/lab';
 
@@ -14,6 +15,7 @@ export interface ClientVoxelizeOpts {
   mirror: boolean;
   usePalette: boolean;
   optimize: boolean;
+  hollow: boolean;
 }
 
 export const DEFAULT_OPTS: ClientVoxelizeOpts = {
@@ -24,6 +26,7 @@ export const DEFAULT_OPTS: ClientVoxelizeOpts = {
   mirror: true,
   usePalette: true,
   optimize: true,
+  hollow: true,
 };
 
 export async function loadImageElement(file: File | Blob): Promise<HTMLImageElement> {
@@ -227,5 +230,8 @@ export function voxelizeImage(img: HTMLImageElement, opts: ClientVoxelizeOpts): 
     },
   };
 
-  return opts.optimize ? packBricks(snapshot) : snapshot;
+  let result = snapshot;
+  if (opts.hollow) result = hollowGrid(result);
+  if (opts.optimize) result = packBricks(result);
+  return result;
 }
