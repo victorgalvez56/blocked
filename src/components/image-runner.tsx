@@ -14,6 +14,7 @@ import {
   type DepthMode,
 } from '@/lib/voxelizer/client-image-to-grid';
 import { voxelizeMultiview } from '@/lib/voxelizer/multiview';
+import { voxelizeMultiviewN, VIEWS_8 } from '@/lib/voxelizer/multiview-n';
 import { renderMeshTo4Views } from '@/lib/voxelizer/render-views';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
 
@@ -260,6 +261,65 @@ export function ImageRunner() {
     }
   }
 
+  async function generate8Views() {
+    if (aiPrompt.trim().length < 3) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const res = await fetch('/api/dalle-views-8', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: aiPrompt.trim() }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        urls?: Record<string, string>;
+        error?: string;
+      };
+      if (!data.ok || !data.urls) {
+        throw new Error(data.error ?? 'gpt-image-1 8-view batch failed');
+      }
+
+      const order = ['front', 'fr', 'right', 'br', 'back', 'bl', 'left', 'fl'] as const;
+      const loadedImages: HTMLImageElement[] = await Promise.all(
+        order.map((k) => loadImageFromUrl(data.urls![k])),
+      );
+
+      // Run the N-view voxelizer directly — bypasses the 4-slot UI
+      const plan = voxelizeMultiviewN(
+        loadedImages.map((image, i) => ({ image, spec: VIEWS_8[i] })),
+        opts,
+      );
+      setPlan(plan);
+
+      // Reflect the front image as `single` so the UI shows the ref source
+      const frontImg = loadedImages[0];
+      setSingle({ el: frontImg, url: data.urls.front });
+
+      // Show the first 4 views in the multiview grid as a record of the run
+      const slotKeys: ViewKey[] = ['front', 'side', 'back', 'top'];
+      const slotMap: Record<ViewKey, number> = {
+        front: 0,
+        side: 2, // 'right' index
+        back: 4,
+        top: 1, // we don't actually have a top — use 'fr' as a placeholder marker
+      };
+      const next: Partial<Record<ViewKey, ImageEntry>> = {};
+      for (const k of slotKeys) {
+        next[k] = {
+          el: loadedImages[slotMap[k]],
+          url: data.urls[order[slotMap[k]]],
+        };
+      }
+      setViews(next as Record<ViewKey, ImageEntry>);
+      setMode('multiview');
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'generation failed');
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   async function generateMaxDetail() {
     if (aiPrompt.trim().length < 3) return;
     setAiBusy(true);
@@ -432,11 +492,19 @@ export function ImageRunner() {
                   </button>
                   <button
                     type="button"
+                    onClick={generate8Views}
+                    disabled={aiBusy || aiPrompt.trim().length < 3}
+                    className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
+                  >
+                    {aiBusy ? '…' : 'gpt-image-1 · 8 views · $0.34'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={generate4Views}
                     disabled={aiBusy || aiPrompt.trim().length < 3}
                     className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
                   >
-                    {aiBusy ? '…' : 'gpt-image-1 4 views · $0.17'}
+                    {aiBusy ? '…' : 'gpt-image-1 · 4 views · $0.17'}
                   </button>
                   <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
                     🏆 = AI 3D mesh + render local · perfect consistency
