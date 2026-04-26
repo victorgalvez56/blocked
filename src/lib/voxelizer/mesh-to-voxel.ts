@@ -48,6 +48,66 @@ interface TextureSampler {
   data: Uint8ClampedArray;
   width: number;
   height: number;
+  dominantColors: Array<[number, number, number]>;
+}
+
+function extractDominantColors(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  topN: number,
+): Array<[number, number, number]> {
+  // Bucket pixels into 6×6×6 = 216 RGB buckets, ignoring near-white (likely background)
+  const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
+  const total = width * height;
+  const stride = Math.max(1, Math.floor(total / 16384)); // sample at most ~16k pixels
+  for (let i = 0; i < total; i += stride) {
+    const off = i * 4;
+    const r = data[off];
+    const g = data[off + 1];
+    const b = data[off + 2];
+    const a = data[off + 3];
+    if (a < 64) continue;
+    // Skip near-white background (>240 on all channels)
+    if (r > 240 && g > 240 && b > 240) continue;
+    const qr = Math.floor(r / 43);
+    const qg = Math.floor(g / 43);
+    const qb = Math.floor(b / 43);
+    const key = `${qr},${qg},${qb}`;
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.r += r;
+      existing.g += g;
+      existing.b += b;
+      existing.count++;
+    } else {
+      buckets.set(key, { r, g, b, count: 1 });
+    }
+  }
+  const sorted = Array.from(buckets.values()).sort((a, b) => b.count - a.count);
+  return sorted.slice(0, topN).map(
+    (s) => [s.r / s.count, s.g / s.count, s.b / s.count] as [number, number, number],
+  );
+}
+
+function nearestDominant(
+  rgb: [number, number, number],
+  dominants: Array<[number, number, number]>,
+): [number, number, number] {
+  if (dominants.length === 0) return rgb;
+  let best = dominants[0];
+  let bestDist = Infinity;
+  for (const d of dominants) {
+    const dr = rgb[0] - d[0];
+    const dg = rgb[1] - d[1];
+    const db = rgb[2] - d[2];
+    const dist = dr * dr + dg * dg + db * db;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = d;
+    }
+  }
+  return best;
 }
 
 function buildTextureSampler(material: THREE.Material | THREE.Material[]): TextureSampler | null {
@@ -64,7 +124,9 @@ function buildTextureSampler(material: THREE.Material | THREE.Material[]): Textu
     const ctx = cv.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
     ctx.drawImage(img as CanvasImageSource, 0, 0, w, h);
-    return { data: ctx.getImageData(0, 0, w, h).data, width: w, height: h };
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const dominantColors = extractDominantColors(data, w, h, 10);
+    return { data, width: w, height: h, dominantColors };
   } catch {
     return null;
   }
@@ -140,13 +202,13 @@ function sampleSurface(
         const v = ua.y * bary.u + ub.y * bary.v + uc.y * bary.w;
         const cx = Math.floor(u * tex.width);
         const cy = Math.floor((1 - v) * tex.height);
-        // 3×3 neighborhood average — smooths over baked-shading and texture noise
+        // 5×5 neighborhood average smooths baked-shading and texture noise
         let sr = 0;
         let sg = 0;
         let sb = 0;
         let count = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
             const px = Math.max(0, Math.min(tex.width - 1, cx + dx));
             const py = Math.max(0, Math.min(tex.height - 1, cy + dy));
             const off = (py * tex.width + px) * 4;
@@ -156,7 +218,10 @@ function sampleSurface(
             count++;
           }
         }
-        bestRgb = [sr / count, sg / count, sb / count];
+        const avg: [number, number, number] = [sr / count, sg / count, sb / count];
+        // Snap to a dominant texture color first — kills lighting/shadow noise.
+        // Then nearestLegoColor maps the dominant to the closest Lego brick color.
+        bestRgb = nearestDominant(avg, tex.dominantColors);
       } else {
         bestRgb = defaults.get(mesh) ?? [180, 180, 180];
       }
