@@ -416,13 +416,18 @@ export default function LabPage() {
               <input
                 type="range"
                 min={16}
-                max={48}
+                max={36}
                 step={1}
                 value={resolution}
                 onChange={(e) => setResolution(Number(e.target.value))}
                 className="w-full"
                 disabled={voxelizing}
               />
+              {resolution >= 32 && (
+                <div className="border-2 border-ink bg-yellow px-2 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-ink">
+                  ⚠ {resolution >= 34 ? 'Heavy' : 'Slower'} — high-poly meshes may take 10-30s
+                </div>
+              )}
               <button
                 type="button"
                 onClick={voxelize}

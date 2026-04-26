@@ -184,10 +184,19 @@ export async function meshToVoxelGrid(
     return { size: { x: 0, y: 0, z: 0 }, voxels: [], baseplate: { width: 16, depth: 16 } };
   }
 
+  // Filter out tiny "shadow" / helper meshes the AI sometimes emits — keep substantial ones only
+  let totalVerts = 0;
+  for (const m of meshes) totalVerts += m.geometry.attributes.position.count;
+  const minVerts = Math.max(50, Math.floor(totalVerts * 0.05));
+  const filteredMeshes = meshes.filter(
+    (m) => m.geometry.attributes.position.count >= minVerts,
+  );
+  if (filteredMeshes.length === 0) filteredMeshes.push(meshes[0]);
+
   scene.updateMatrixWorld(true);
 
   const bbox = new THREE.Box3();
-  for (const m of meshes) bbox.expandByObject(m);
+  for (const m of filteredMeshes) bbox.expandByObject(m);
   const size = new THREE.Vector3();
   bbox.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z);
@@ -203,7 +212,7 @@ export async function meshToVoxelGrid(
   const bvhs = new Map<THREE.Mesh, MeshBVH>();
   const defaults = new Map<THREE.Mesh, [number, number, number]>();
   const textures = new Map<THREE.Mesh, TextureSampler | null>();
-  for (const mesh of meshes) {
+  for (const mesh of filteredMeshes) {
     bvhs.set(mesh, new MeshBVH(mesh.geometry));
     defaults.set(mesh, materialColor(mesh.material));
     textures.set(mesh, buildTextureSampler(mesh.material));
@@ -233,7 +242,7 @@ export async function meshToVoxelGrid(
         let antiVotes = 0;
         for (const dir of rayDirs) {
           let totalHits = 0;
-          for (const mesh of meshes) {
+          for (const mesh of filteredMeshes) {
             raycaster.set(point, dir);
             totalHits += raycaster.intersectObject(mesh, false).length;
           }
@@ -247,7 +256,7 @@ export async function meshToVoxelGrid(
         }
         if (votes < 2) continue;
 
-        const rgb = sampleSurface(point, meshes, bvhs, textures, defaults);
+        const rgb = sampleSurface(point, filteredMeshes, bvhs, textures, defaults);
         const colorId = nearestLegoColor(rgb, palette).id;
 
         voxels.push({
@@ -266,7 +275,7 @@ export async function meshToVoxelGrid(
     }
   }
 
-  for (const mesh of meshes) {
+  for (const mesh of filteredMeshes) {
     if (mesh.geometry.boundsTree) {
       (mesh.geometry as unknown as { disposeBoundsTree: () => void }).disposeBoundsTree();
     }

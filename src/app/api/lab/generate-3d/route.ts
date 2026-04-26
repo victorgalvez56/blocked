@@ -153,13 +153,14 @@ export async function POST(req: Request): Promise<NextResponse<LabResponse>> {
     }
   }
   // Trellis: by default returns only video. Force GLB output.
+  // Aggressive mesh_simplify so the .glb is voxelizer-friendly (fewer tris, less BVH memory).
   if (isTrellis) {
     input.generate_model = true;
     input.generate_color = true;
     input.generate_normal = false;
     input.save_gaussian_ply = false;
     input.texture_size = 1024;
-    input.mesh_simplify = 0.95;
+    input.mesh_simplify = 0.92;
   }
   if (!owner || !name) {
     return NextResponse.json(
