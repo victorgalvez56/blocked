@@ -213,12 +213,44 @@ export function ImageRunner() {
       const img = await loadImageFromUrl(data.url);
       setSingle({ el: img, url: data.url });
       setMode('single');
-      // Auto-tune for "object" feel — chibi/AI subjects look thin at default depth
       setOpts((prev) => ({
         ...prev,
         maxDepth: Math.max(prev.maxDepth, 16),
         mirror: true,
       }));
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'generation failed');
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  async function generate4Views() {
+    if (aiPrompt.trim().length < 3) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const res = await fetch('/api/dalle-views', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: aiPrompt.trim() }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        urls?: Record<ViewKey, string>;
+        error?: string;
+      };
+      if (!data.ok || !data.urls) {
+        throw new Error(data.error ?? 'DALL·E batch failed');
+      }
+      const loaded = await Promise.all(
+        VIEW_KEYS.map(async (k) => {
+          const img = await loadImageFromUrl(data.urls![k]);
+          return [k, { el: img, url: data.urls![k] }] as const;
+        }),
+      );
+      setViews(Object.fromEntries(loaded) as Record<ViewKey, ImageEntry>);
+      setMode('multiview');
     } catch (e) {
       setAiError(e instanceof Error ? e.message : 'generation failed');
     } finally {
@@ -292,9 +324,17 @@ export function ImageRunner() {
                     type="button"
                     onClick={generateFromText}
                     disabled={aiBusy || aiPrompt.trim().length < 3}
+                    className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
+                  >
+                    {aiBusy ? 'DALL·E…' : '1 image — bas-relief · $0.04'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={generate4Views}
+                    disabled={aiBusy || aiPrompt.trim().length < 3}
                     className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
                   >
-                    {aiBusy ? 'DALL·E generating… (~10s)' : 'Generate image →'}
+                    {aiBusy ? 'DALL·E ×4…' : '4 views — true 3D · $0.16'}
                   </button>
                   {aiError && (
                     <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
@@ -303,7 +343,7 @@ export function ImageRunner() {
                     </div>
                   )}
                   <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
-                    text → DALL·E ($0.04) → drops in above → auto-voxelizes
+                    4 views = front/side/back/top → silhouette intersection
                   </div>
                 </div>
               </>
@@ -323,6 +363,35 @@ export function ImageRunner() {
                 </div>
                 <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-2">
                   {Object.keys(views).length} / 4 views uploaded
+                </div>
+
+                <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
+                    ↳ or generate 4 views with AI
+                  </div>
+                  <textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    rows={2}
+                    placeholder="a cute red dragon"
+                    className="w-full resize-none border-2 border-ink bg-paper px-2.5 py-1.5 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
+                    disabled={aiBusy}
+                    maxLength={300}
+                  />
+                  <button
+                    type="button"
+                    onClick={generate4Views}
+                    disabled={aiBusy || aiPrompt.trim().length < 3}
+                    className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
+                  >
+                    {aiBusy ? 'DALL·E ×4… (~15s parallel)' : 'Generate 4 views · $0.16'}
+                  </button>
+                  {aiError && (
+                    <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
+                      <span className="font-bold uppercase tracking-[0.14em] text-red">Error</span>{' '}
+                      <span>{aiError}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
