@@ -78,90 +78,109 @@ function buildMaskedView(img: HTMLImageElement, N: number, bgThreshold: number):
   return { mask, rgb: data, N };
 }
 
+function chamferEdgeDistance(mask: Uint8Array, N: number): Float32Array {
+  const dist = new Int16Array(N * N);
+  const INF = 9999;
+  for (let i = 0; i < N * N; i++) dist[i] = mask[i] ? INF : 0;
+  for (let py = 0; py < N; py++) {
+    for (let px = 0; px < N; px++) {
+      if (!mask[py * N + px]) continue;
+      let d = dist[py * N + px];
+      if (px > 0) d = Math.min(d, dist[py * N + px - 1] + 1);
+      if (py > 0) d = Math.min(d, dist[(py - 1) * N + px] + 1);
+      dist[py * N + px] = d;
+    }
+  }
+  for (let py = N - 1; py >= 0; py--) {
+    for (let px = N - 1; px >= 0; px--) {
+      if (!mask[py * N + px]) continue;
+      let d = dist[py * N + px];
+      if (px < N - 1) d = Math.min(d, dist[py * N + px + 1] + 1);
+      if (py < N - 1) d = Math.min(d, dist[(py + 1) * N + px] + 1);
+      dist[py * N + px] = d;
+    }
+  }
+  let maxD = 0;
+  for (let i = 0; i < N * N; i++) if (mask[i] && dist[i] > maxD) maxD = dist[i];
+  const out = new Float32Array(N * N);
+  if (maxD > 0) for (let i = 0; i < N * N; i++) if (mask[i]) out[i] = dist[i] / maxD;
+  return out;
+}
+
 export function voxelizeMultiview(
   images: MultiviewImages,
   opts: ClientVoxelizeOpts,
 ): VoxelGridSnapshot {
-  const N = Math.min(opts.resolution, 32);
+  const N = Math.max(8, opts.resolution);
 
   const front = buildMaskedView(images.front, N, opts.backgroundThreshold);
   const side = buildMaskedView(images.side, N, opts.backgroundThreshold);
-  const back = buildMaskedView(images.back, N, opts.backgroundThreshold);
   const top = buildMaskedView(images.top, N, opts.backgroundThreshold);
+  // back is intentionally unused — front drives both X×Y silhouette and color.
 
-  // Carve: voxel survives only if all 4 silhouettes contain its projection
-  const carved = new Uint8Array(N * N * N);
-  for (let z = 0; z < N; z++) {
-    for (let y = 0; y < N; y++) {
-      const py = N - 1 - y;
-      for (let x = 0; x < N; x++) {
-        if (!front.mask[py * N + x]) continue;
-        if (!back.mask[py * N + (N - 1 - x)]) continue;
-        if (!side.mask[py * N + z]) continue;
-        const tpy = N - 1 - z;
-        if (!top.mask[tpy * N + x]) continue;
-        carved[z * N * N + y * N + x] = 1;
-      }
-    }
+  // FRONT-DRIVEN BAS-RELIEF:
+  //   - Front silhouette = X×Y mask + per-pixel color (principal)
+  //   - Per-pixel thickness from front edge distance (organic depth like single-view)
+  //   - Side/top only act as global thickness CAPS per row (y) and column (x)
+  //     so a thin subject (book, profile) doesn't over-extrude
+  //   - Bricks centered around midZ (mirror)
+  //   - Back is ignored
+  const edge = chamferEdgeDistance(front.mask, N);
+
+  // Side view fills the Y×Z plane. At image row py (= world y), how much of Z is foreground?
+  const sideDepthFraction = new Float32Array(N);
+  for (let py = 0; py < N; py++) {
+    let count = 0;
+    for (let pz = 0; pz < N; pz++) if (side.mask[py * N + pz]) count++;
+    sideDepthFraction[py] = count / N;
+  }
+
+  // Top view fills the X×Z plane. At image column px (= world x), how much of Z is foreground?
+  const topDepthFraction = new Float32Array(N);
+  for (let px = 0; px < N; px++) {
+    let count = 0;
+    for (let pz = 0; pz < N; pz++) if (top.mask[pz * N + px]) count++;
+    topDepthFraction[px] = count / N;
   }
 
   const palette = availableColors();
   const voxels: Voxel[] = [];
+  const midZ = Math.floor(N / 2);
 
-  const idxOf = (x: number, y: number, z: number) => z * N * N + y * N + x;
+  // Cap thickness scale: take the GLOBAL max of side/top fractions as a sanity ceiling
+  // (so we never extrude beyond what either auxiliary view ever shows). Floor at 0.25
+  // so the build always has at least some volume even when side/top are noisy.
+  let sideTopCeiling = 0;
+  for (let i = 0; i < N; i++) {
+    sideTopCeiling = Math.max(sideTopCeiling, sideDepthFraction[i], topDepthFraction[i]);
+  }
+  sideTopCeiling = Math.max(0.25, Math.min(1, sideTopCeiling));
 
-  for (let z = 0; z < N; z++) {
-    for (let y = 0; y < N; y++) {
-      for (let x = 0; x < N; x++) {
-        const idx = idxOf(x, y, z);
-        if (!carved[idx]) continue;
+  for (let y = 0; y < N; y++) {
+    const py = N - 1 - y;
+    for (let x = 0; x < N; x++) {
+      if (!front.mask[py * N + x]) continue;
 
-        // Pick color from the most-relevant exposed face
-        let pr = 0;
-        let pg = 0;
-        let pb = 0;
-        const py = N - 1 - y;
+      const edgeFactor = edge[py * N + x]; // 0..1, 1 = deepest center of front silhouette
+      // Local cap: smaller of side-row or top-col fraction (whichever auxiliary view
+      // says "this slice is thinner" wins — front never gets thicker than the views allow).
+      const localCap = Math.min(sideDepthFraction[py], topDepthFraction[x]);
+      const localThickness = Math.max(localCap, 0.15); // never zero; tiny floor
 
-        const frontExposed = z === 0 || !carved[idxOf(x, y, z - 1)];
-        const backExposed = z === N - 1 || !carved[idxOf(x, y, z + 1)];
-        const rightExposed = x === N - 1 || !carved[idxOf(x + 1, y, z)];
-        const leftExposed = x === 0 || !carved[idxOf(x - 1, y, z)];
-        const topExposed = y === N - 1 || !carved[idxOf(x, y + 1, z)];
+      // Effective normalized thickness: edge-shaped, capped by side/top, capped by global ceiling.
+      const norm = Math.min(edgeFactor + 0.25, localThickness, sideTopCeiling);
+      const thickness = Math.max(1, Math.round(norm * N * 0.55));
+      const half = Math.floor(thickness / 2);
+      const zMin = Math.max(0, midZ - half);
+      const zMax = Math.min(N - 1, midZ + (thickness - half - 1));
 
-        if (frontExposed) {
-          const i = (py * N + x) * 4;
-          pr = front.rgb[i];
-          pg = front.rgb[i + 1];
-          pb = front.rgb[i + 2];
-        } else if (backExposed) {
-          const i = (py * N + (N - 1 - x)) * 4;
-          pr = back.rgb[i];
-          pg = back.rgb[i + 1];
-          pb = back.rgb[i + 2];
-        } else if (rightExposed) {
-          const i = (py * N + z) * 4;
-          pr = side.rgb[i];
-          pg = side.rgb[i + 1];
-          pb = side.rgb[i + 2];
-        } else if (leftExposed) {
-          const i = (py * N + (N - 1 - z)) * 4;
-          pr = side.rgb[i];
-          pg = side.rgb[i + 1];
-          pb = side.rgb[i + 2];
-        } else if (topExposed) {
-          const tpy = N - 1 - z;
-          const i = (tpy * N + x) * 4;
-          pr = top.rgb[i];
-          pg = top.rgb[i + 1];
-          pb = top.rgb[i + 2];
-        } else {
-          const i = (py * N + x) * 4;
-          pr = front.rgb[i];
-          pg = front.rgb[i + 1];
-          pb = front.rgb[i + 2];
-        }
+      const i = (py * N + x) * 4;
+      const colorId = nearestLegoColor(
+        [front.rgb[i], front.rgb[i + 1], front.rgb[i + 2]],
+        palette,
+      ).id;
 
-        const colorId = nearestLegoColor([pr, pg, pb], palette).id;
+      for (let z = zMin; z <= zMax; z++) {
         voxels.push({
           coord: [x, y, z],
           colorId,

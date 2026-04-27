@@ -18,6 +18,10 @@ import { voxelizeMultiviewN, VIEWS_8 } from '@/lib/voxelizer/multiview-n';
 import { renderMeshTo4Views } from '@/lib/voxelizer/render-views';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
 
+// Hide AI-generation entry points (DALL·E / gpt-image-1 / Trellis) without removing
+// the code paths. Flip to true to re-expose the buttons.
+const SHOW_AI_GENERATE = false;
+
 async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
   const img = new Image();
   img.crossOrigin = 'anonymous';
@@ -397,45 +401,47 @@ export function ImageRunner() {
                   onFile={loadSingle}
                 />
 
-                <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
-                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
-                    ↳ or generate with AI
-                  </div>
-                  <textarea
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    rows={2}
-                    placeholder="a cute red dragon"
-                    className="w-full resize-none border-2 border-ink bg-paper px-2.5 py-1.5 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
-                    disabled={aiBusy}
-                    maxLength={300}
-                  />
-                  <button
-                    type="button"
-                    onClick={generateFromText}
-                    disabled={aiBusy || aiPrompt.trim().length < 3}
-                    className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
-                  >
-                    {aiBusy ? 'DALL·E…' : '1 image — bas-relief · $0.04'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={generate4Views}
-                    disabled={aiBusy || aiPrompt.trim().length < 3}
-                    className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
-                  >
-                    {aiBusy ? 'DALL·E ×4…' : '4 views — true 3D · $0.16'}
-                  </button>
-                  {aiError && (
-                    <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
-                      <span className="font-bold uppercase tracking-[0.14em] text-red">Error</span>{' '}
-                      <span>{aiError}</span>
+                {SHOW_AI_GENERATE && (
+                  <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
+                    <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
+                      ↳ or generate with AI
                     </div>
-                  )}
-                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
-                    4 views = front/side/back/top → silhouette intersection
+                    <textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      rows={2}
+                      placeholder="a cute red dragon"
+                      className="w-full resize-none border-2 border-ink bg-paper px-2.5 py-1.5 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
+                      disabled={aiBusy}
+                      maxLength={300}
+                    />
+                    <button
+                      type="button"
+                      onClick={generateFromText}
+                      disabled={aiBusy || aiPrompt.trim().length < 3}
+                      className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
+                    >
+                      {aiBusy ? 'DALL·E…' : '1 image — bas-relief · $0.04'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={generate4Views}
+                      disabled={aiBusy || aiPrompt.trim().length < 3}
+                      className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper disabled:bg-ink-2"
+                    >
+                      {aiBusy ? 'DALL·E ×4…' : '4 views — true 3D · $0.16'}
+                    </button>
+                    {aiError && (
+                      <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
+                        <span className="font-bold uppercase tracking-[0.14em] text-red">Error</span>{' '}
+                        <span>{aiError}</span>
+                      </div>
+                    )}
+                    <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                      4 views = front/side/back/top → silhouette intersection
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
 
@@ -486,53 +492,55 @@ export function ImageRunner() {
                   </div>
                 )}
 
-                <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
-                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
-                    ↳ or generate with AI
-                  </div>
-                  <textarea
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    rows={2}
-                    placeholder="a cute red dragon"
-                    className="w-full resize-none border-2 border-ink bg-paper px-2.5 py-1.5 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
-                    disabled={aiBusy}
-                    maxLength={300}
-                  />
-                  <button
-                    type="button"
-                    onClick={generateMaxDetail}
-                    disabled={aiBusy || aiPrompt.trim().length < 3}
-                    className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper hover:bg-red hover:text-paper disabled:bg-ink-2"
-                  >
-                    {aiBusy ? 'DALL·E → Trellis → render… (~30-60s)' : '🏆 Max detail · text → AI 3D · $0.08'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={generate8Views}
-                    disabled={aiBusy || aiPrompt.trim().length < 3}
-                    className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
-                  >
-                    {aiBusy ? '…' : 'gpt-image-1 · 8 views · $0.34'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={generate4Views}
-                    disabled={aiBusy || aiPrompt.trim().length < 3}
-                    className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
-                  >
-                    {aiBusy ? '…' : 'gpt-image-1 · 4 views · $0.17'}
-                  </button>
-                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
-                    🏆 = AI 3D mesh + render local · perfect consistency
-                  </div>
-                  {aiError && (
-                    <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
-                      <span className="font-bold uppercase tracking-[0.14em] text-red">Error</span>{' '}
-                      <span>{aiError}</span>
+                {SHOW_AI_GENERATE && (
+                  <div className="space-y-2 border-2 border-dashed border-line-strong p-3">
+                    <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-2">
+                      ↳ or generate with AI
                     </div>
-                  )}
-                </div>
+                    <textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      rows={2}
+                      placeholder="a cute red dragon"
+                      className="w-full resize-none border-2 border-ink bg-paper px-2.5 py-1.5 font-mono text-[12px] text-ink shadow-[3px_3px_0_var(--ink)] focus:bg-yellow focus:outline-none"
+                      disabled={aiBusy}
+                      maxLength={300}
+                    />
+                    <button
+                      type="button"
+                      onClick={generateMaxDetail}
+                      disabled={aiBusy || aiPrompt.trim().length < 3}
+                      className="press w-full bg-red px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-paper hover:bg-red hover:text-paper disabled:bg-ink-2"
+                    >
+                      {aiBusy ? 'DALL·E → Trellis → render… (~30-60s)' : '🏆 Max detail · text → AI 3D · $0.08'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={generate8Views}
+                      disabled={aiBusy || aiPrompt.trim().length < 3}
+                      className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
+                    >
+                      {aiBusy ? '…' : 'gpt-image-1 · 8 views · $0.34'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={generate4Views}
+                      disabled={aiBusy || aiPrompt.trim().length < 3}
+                      className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink disabled:opacity-50"
+                    >
+                      {aiBusy ? '…' : 'gpt-image-1 · 4 views · $0.17'}
+                    </button>
+                    <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
+                      🏆 = AI 3D mesh + render local · perfect consistency
+                    </div>
+                    {aiError && (
+                      <div className="border-2 border-red bg-red/5 px-2 py-1 font-mono text-[10px] text-ink">
+                        <span className="font-bold uppercase tracking-[0.14em] text-red">Error</span>{' '}
+                        <span>{aiError}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
