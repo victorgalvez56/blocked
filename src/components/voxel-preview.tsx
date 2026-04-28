@@ -1,6 +1,6 @@
 'use client';
 
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
@@ -23,6 +23,15 @@ const EXPLODE_REACH = 18; // world units that 100% explode pushes a max-radius b
 function brickRotHash(coord: readonly [number, number, number], salt: number): number {
   const n = coord[0] * 127 + coord[1] * 311 + coord[2] * 74 + salt * 997;
   return Math.abs(Math.sin(n) * 43758.5453) % 1;
+}
+
+// Standard bounce-out easing (matches GSAP's bounce.out)
+function bounceOut(t: number): number {
+  const n = 7.5625, d = 2.75;
+  if (t < 1 / d) return n * t * t;
+  if (t < 2 / d) { const t2 = t - 1.5 / d; return n * t2 * t2 + 0.75; }
+  if (t < 2.5 / d) { const t2 = t - 2.25 / d; return n * t2 * t2 + 0.9375; }
+  const t2 = t - 2.625 / d; return n * t2 * t2 + 0.984375;
 }
 
 // Build a brick: open bottom (cavity), 4 outer walls + top cap.
@@ -113,6 +122,15 @@ function BrickInstancedGroup({
   explode,
   center,
   nuke,
+  gravityOffsets,
+  gravityProgress,
+  maxGridY,
+  gravityRestoring,
+  disco,
+  blackholeProgress,
+  maxGridDist,
+  hiddenKeys,
+  recolorMap,
 }: {
   group: BrickGroup;
   dimmed: boolean;
@@ -120,37 +138,126 @@ function BrickInstancedGroup({
   explode: number;
   center: { x: number; y: number; z: number };
   nuke?: boolean;
+  gravityOffsets?: Map<string, number>;
+  gravityProgress?: number;
+  maxGridY?: number;
+  gravityRestoring?: boolean;
+  disco?: boolean;
+  blackholeProgress?: number;
+  maxGridDist?: number;
+  hiddenKeys?: Set<string>;
+  recolorMap?: Map<string, string>;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
   const count = group.voxels.length;
-  const color = colorByIdHex[group.colorId] ?? '#888888';
+  const mappedColorId = recolorMap?.get(group.colorId) ?? group.colorId;
+  const color = colorByIdHex[mappedColorId] ?? '#888888';
   const { sx, sz } = dimsFor(group.brickId, group.rotation);
+  const tempColor = useMemo(() => new THREE.Color(), []);
+
+  useFrame((state) => {
+    if (!meshRef.current || !matRef.current || !disco) return;
+    const t = state.clock.elapsedTime * 0.35;
+    for (let i = 0; i < count; i++) {
+      const v = group.voxels[i];
+      const hue = ((t + v.coord[0] * 0.08 + v.coord[2] * 0.08 + v.coord[1] * 0.04) % 1 + 1) % 1;
+      tempColor.setHSL(hue, 1.0, 0.5);
+      meshRef.current.setColorAt(i, tempColor);
+    }
+    meshRef.current.instanceColor!.needsUpdate = true;
+    matRef.current.color.set('#ffffff');
+  });
+
+  useEffect(() => {
+    if (!disco && meshRef.current) {
+      const base = new THREE.Color(color);
+      for (let i = 0; i < count; i++) meshRef.current.setColorAt(i, base);
+      if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    }
+  }, [disco, color, count]);
 
   useEffect(() => {
     if (!meshRef.current) return;
     const dummy = new THREE.Object3D();
+    const gp = gravityProgress ?? 0;
+    const maxY = maxGridY ?? 1;
+    const bhp = blackholeProgress ?? 0;
+    const mDist = maxGridDist ?? 1;
+
     for (let i = 0; i < count; i++) {
       const v = group.voxels[i];
-      const bx = v.coord[0] + sx / 2 - 0.5;
-      const by = v.coord[1] * BRICK_HEIGHT + BRICK_VISUAL_HEIGHT / 2;
-      const bz = v.coord[2] + sz / 2 - 0.5;
-      const [ox, oy, oz] = explodeOffset([bx, by, bz], center, explode);
-      dummy.position.set(bx + ox, by + oy, bz + oz);
-      if (nuke && explode > 0) {
-        const spin = Math.min(explode, 1.5);
-        dummy.rotation.set(
-          brickRotHash(v.coord, 0) * Math.PI * 6 * spin,
-          brickRotHash(v.coord, 1) * Math.PI * 6 * spin,
-          brickRotHash(v.coord, 2) * Math.PI * 6 * spin,
-        );
-      } else {
+      const coordKey = `${v.coord[0]},${v.coord[1]},${v.coord[2]}`;
+
+      if (hiddenKeys?.has(coordKey)) {
+        dummy.position.set(0, -9999, 0);
+        dummy.scale.setScalar(0);
         dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        meshRef.current.setMatrixAt(i, dummy.matrix);
+        continue;
       }
+
+      const bx = v.coord[0] + sx / 2 - 0.5;
+      const bz = v.coord[2] + sz / 2 - 0.5;
+
+      let gridY = v.coord[1];
+      if (gp > 0 && gravityOffsets) {
+        const delta = gravityOffsets.get(coordKey) ?? 0;
+        if (delta !== 0) {
+          let factor: number;
+          if (gravityRestoring) {
+            factor = gp;
+          } else {
+            const delay = maxY > 0 ? (v.coord[1] / maxY) * 0.28 : 0;
+            const t = Math.max(0, Math.min(1, (gp - delay) / (1 - delay + 0.001)));
+            factor = bounceOut(t);
+          }
+          gridY = v.coord[1] + delta * factor;
+        }
+      }
+
+      const by = gridY * BRICK_HEIGHT + BRICK_VISUAL_HEIGHT / 2;
+
+      if (bhp > 0) {
+        const origDist = Math.sqrt((bx - center.x) ** 2 + (bz - center.z) ** 2);
+        const normalizedDist = origDist / (mDist + 0.001);
+        const delay = normalizedDist * 0.35;
+        const localT = Math.max(0, Math.min(1, (bhp - delay) / (1 - delay + 0.001)));
+        const angle = brickRotHash(v.coord, 5) * Math.PI * 2 + localT * Math.PI * 5;
+        const dist = origDist * (1 - localT);
+        dummy.position.set(
+          center.x + Math.cos(angle) * dist,
+          by + (center.y - by) * localT * 0.8,
+          center.z + Math.sin(angle) * dist,
+        );
+        dummy.rotation.set(
+          brickRotHash(v.coord, 6) * Math.PI * 2 * localT,
+          brickRotHash(v.coord, 7) * Math.PI * 4 * localT,
+          0,
+        );
+        dummy.scale.setScalar(Math.max(0, 1 - localT * 1.1));
+      } else {
+        const [ox, oy, oz] = explodeOffset([bx, by, bz], center, explode);
+        dummy.position.set(bx + ox, by + oy, bz + oz);
+        dummy.scale.setScalar(1);
+        if (nuke && explode > 0) {
+          const spin = Math.min(explode, 1.5);
+          dummy.rotation.set(
+            brickRotHash(v.coord, 0) * Math.PI * 6 * spin,
+            brickRotHash(v.coord, 1) * Math.PI * 6 * spin,
+            brickRotHash(v.coord, 2) * Math.PI * 6 * spin,
+          );
+        } else {
+          dummy.rotation.set(0, 0, 0);
+        }
+      }
+
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [group.voxels, count, sx, sz, explode, center.x, center.y, center.z, nuke]);
+  }, [group.voxels, count, sx, sz, explode, center.x, center.y, center.z, nuke, gravityOffsets, gravityProgress, maxGridY, gravityRestoring, blackholeProgress, maxGridDist, hiddenKeys]);
 
   const geometry = useMemo(() => getBrickGeometry(sx, sz), [sx, sz]);
 
@@ -163,6 +270,7 @@ function BrickInstancedGroup({
       renderOrder={dimmed ? 0 : 1}
     >
       <meshStandardMaterial
+        ref={matRef}
         color={color}
         roughness={0.45}
         metalness={0.04}
@@ -386,6 +494,153 @@ function ShockwaveRing({
   );
 }
 
+function CameraRig({
+  photoMode,
+  center,
+  distance,
+}: {
+  photoMode: boolean;
+  center: { x: number; y: number; z: number };
+  distance: number;
+}) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (!photoMode) return;
+    const iso = new THREE.Vector3(1, 1, 1).normalize();
+    camera.position.set(
+      center.x + iso.x * distance,
+      center.y + iso.y * distance,
+      center.z + iso.z * distance,
+    );
+    (camera as THREE.PerspectiveCamera).lookAt(center.x, center.y, center.z);
+  }, [photoMode, center.x, center.y, center.z, distance, camera]);
+  return null;
+}
+
+export type PosterData = {
+  sizeX: number; sizeY: number; sizeZ: number;
+  pieceCount: number; stamp: string;
+};
+
+function ScreenshotCapture({ trigger, posterData }: { trigger: number; posterData?: PosterData | null }) {
+  const { gl } = useThree();
+  const prevRef = useRef(trigger);
+  useEffect(() => {
+    if (trigger === prevRef.current) return;
+    prevRef.current = trigger;
+
+    const src = gl.domElement;
+    const w = src.width;
+    const h = src.height;
+
+    const composite = document.createElement('canvas');
+    composite.width = w;
+    composite.height = h;
+    const ctx = composite.getContext('2d')!;
+    ctx.drawImage(src, 0, 0);
+
+    if (posterData) {
+      const pad = Math.round(w * 0.042);
+      const ink = '#14161f';
+      const ink2 = '#4a5060';
+      const red = '#d81e2c';
+
+      // top-left: title
+      const titlePx = Math.round(w * 0.068);
+      ctx.font = `900 ${titlePx}px Georgia, "Times New Roman", serif`;
+      ctx.fillStyle = ink;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('BLOCKED', pad, pad);
+
+      // subtitle under title
+      const subPx = Math.round(w * 0.014);
+      ctx.font = `${subPx}px monospace`;
+      ctx.fillStyle = ink2;
+      ctx.fillText(
+        `${posterData.sizeX} × ${posterData.sizeY} × ${posterData.sizeZ} UNITS`,
+        pad,
+        pad + Math.round(titlePx * 1.08),
+      );
+
+      // top-right: piece count
+      const cntPx = Math.round(w * 0.062);
+      ctx.font = `900 ${cntPx}px Georgia, "Times New Roman", serif`;
+      ctx.fillStyle = red;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(posterData.pieceCount.toLocaleString(), w - pad, pad);
+      ctx.font = `${subPx}px monospace`;
+      ctx.fillStyle = ink2;
+      ctx.fillText('PIECES', w - pad, pad + Math.round(cntPx * 1.05));
+
+      // bottom-left: timestamp
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.font = `${subPx}px monospace`;
+      ctx.fillStyle = ink2;
+      ctx.fillText(posterData.stamp, pad, h - pad);
+
+      // bottom-right: URL
+      ctx.textAlign = 'right';
+      ctx.fillText('blocked.victorgalvez.dev', w - pad, h - pad);
+    }
+
+    const url = composite.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'blocked-photomode.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [trigger, gl, posterData]);
+  return null;
+}
+
+function LotteryPop({
+  voxel,
+  popKey,
+  center,
+  explode,
+}: {
+  voxel: Voxel | null;
+  popKey: number;
+  center: { x: number; y: number; z: number };
+  explode: number;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const tRef = useRef(1);
+
+  useEffect(() => {
+    if (voxel) tRef.current = 0;
+  }, [popKey, voxel]);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    if (tRef.current >= 1) { meshRef.current.visible = false; return; }
+    tRef.current = Math.min(1, tRef.current + delta / 0.28);
+    meshRef.current.scale.setScalar(Math.max(0, Math.sin(tRef.current * Math.PI) * 2.4));
+    meshRef.current.visible = true;
+  });
+
+  if (!voxel) return null;
+
+  const def = getBrick(voxel.brickId);
+  const sx = !def ? 1 : voxel.rotation === 90 ? def.dimensions.studsZ : def.dimensions.studsX;
+  const sz = !def ? 1 : voxel.rotation === 90 ? def.dimensions.studsX : def.dimensions.studsZ;
+  const bx = voxel.coord[0] + sx / 2 - 0.5;
+  const by = voxel.coord[1] * BRICK_HEIGHT + BRICK_VISUAL_HEIGHT / 2;
+  const bz = voxel.coord[2] + sz / 2 - 0.5;
+  const [ox, oy, oz] = explodeOffset([bx, by, bz], center, explode);
+
+  return (
+    <mesh ref={meshRef} position={[bx + ox, by + oy, bz + oz]} visible={false}>
+      <boxGeometry args={[sx, BRICK_VISUAL_HEIGHT, sz]} />
+      <meshBasicMaterial color="#ffee00" transparent opacity={0.85} depthWrite={false} />
+    </mesh>
+  );
+}
+
 export function VoxelPreview({
   plan,
   highlight = null,
@@ -394,6 +649,18 @@ export function VoxelPreview({
   nuke = false,
   missileActive = false,
   impactKey = 0,
+  gravityOffsets,
+  gravityProgress = 0,
+  gravityRestoring = false,
+  disco = false,
+  photoMode = false,
+  screenshotTrigger = 0,
+  posterData = null,
+  blackholeProgress = 0,
+  hiddenKeys,
+  lotteryPopVoxel = null,
+  lotteryPopKey = 0,
+  recolorMap,
 }: {
   plan: VoxelGridSnapshot;
   highlight?: Highlight;
@@ -402,6 +669,18 @@ export function VoxelPreview({
   nuke?: boolean;
   missileActive?: boolean;
   impactKey?: number;
+  gravityOffsets?: Map<string, number>;
+  gravityProgress?: number;
+  gravityRestoring?: boolean;
+  disco?: boolean;
+  photoMode?: boolean;
+  screenshotTrigger?: number;
+  posterData?: PosterData | null;
+  blackholeProgress?: number;
+  hiddenKeys?: Set<string>;
+  lotteryPopVoxel?: Voxel | null;
+  lotteryPopKey?: number;
+  recolorMap?: Map<string, string>;
 }) {
   const center = useMemo(
     () => ({
@@ -481,9 +760,10 @@ export function VoxelPreview({
 
   const cameraDistance = Math.max(plan.size.x, plan.size.y * BRICK_HEIGHT) * 1.65;
   const isExploding = explode > 0.02;
+  const maxGridDist = Math.sqrt((plan.size.x / 2) ** 2 + (plan.size.z / 2) ** 2);
 
   return (
-    <Canvas shadows dpr={[1, 2]} className="block">
+    <Canvas shadows dpr={[1, 2]} className="block" gl={{ preserveDrawingBuffer: true }}>
       <color attach="background" args={['#f2ebdd']} />
       <PerspectiveCamera
         makeDefault
@@ -499,9 +779,12 @@ export function VoxelPreview({
         makeDefault
         enableDamping
         dampingFactor={0.08}
-        autoRotate={highlight === null && !isExploding}
+        autoRotate={highlight === null && !isExploding && !photoMode}
         autoRotateSpeed={0.6}
+        enabled={!photoMode}
       />
+      <CameraRig photoMode={photoMode} center={center} distance={cameraDistance * 1.1} />
+      <ScreenshotCapture trigger={screenshotTrigger} posterData={posterData} />
       <ambientLight intensity={0.55} />
       <directionalLight
         position={[center.x + 30, 50, center.z + 25]}
@@ -525,11 +808,20 @@ export function VoxelPreview({
             explode={explode}
             center={center}
             nuke={nuke}
+            gravityOffsets={gravityOffsets}
+            gravityProgress={gravityProgress}
+            maxGridY={plan.size.y - 1}
+            gravityRestoring={gravityRestoring}
+            disco={disco}
+            blackholeProgress={blackholeProgress}
+            maxGridDist={maxGridDist}
+            hiddenKeys={hiddenKeys}
+            recolorMap={recolorMap}
           />
         );
       })}
 
-      {studGroups.map((g) => {
+      {gravityProgress < 0.05 && !disco && blackholeProgress < 0.05 && studGroups.map((g) => {
         const match = matchesHighlight(g.brickId, g.colorId, highlight);
         if (highlight !== null && !match) return null;
         return (
@@ -548,6 +840,7 @@ export function VoxelPreview({
         <CurrentVoxelSpotlight voxel={currentVoxel} center={center} explode={explode} />
       )}
 
+      <LotteryPop voxel={lotteryPopVoxel} popKey={lotteryPopKey} center={center} explode={explode} />
       <Missile active={missileActive} center={center} />
       <ShockwaveRing impactKey={impactKey} center={center} />
     </Canvas>

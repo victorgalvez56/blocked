@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VoxelPreview, type Highlight } from './voxel-preview';
+import { VoxelPreview, type Highlight, type PosterData } from './voxel-preview';
 import { LogoMark } from './logo-mark';
 import { BomPanel } from './bom-panel';
 import {
@@ -11,10 +11,11 @@ import {
   loadImageElement,
   type ClientVoxelizeOpts,
 } from '@/lib/voxelizer/client-image-to-grid';
+import { PALETTE } from '@/lib/palette';
 import { voxelizeMultiview } from '@/lib/voxelizer/multiview';
 import { voxelizeMultiviewN, VIEWS_8 } from '@/lib/voxelizer/multiview-n';
 import { renderMeshTo4Views } from '@/lib/voxelizer/render-views';
-import type { VoxelGridSnapshot } from '@/types/voxel.types';
+import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
 
 // Hide AI-generation entry points (DALL·E / gpt-image-1 / Trellis) without removing
 // the code paths. Flip to true to re-expose the buttons.
@@ -70,10 +71,29 @@ export function ImageRunner() {
   const [nukeFlash, setNukeFlash] = useState(false);
   const [showMissile, setShowMissile] = useState(false);
   const [impactKey, setImpactKey] = useState(0);
+  const [gravityActive, setGravityActive] = useState(false);
+  const [gravityProgress, setGravityProgress] = useState(0);
+  const [gravityOffsets, setGravityOffsets] = useState<Map<string, number> | null>(null);
+  const [gravityRestoring, setGravityRestoring] = useState(false);
+  const [disco, setDisco] = useState(false);
+  const [blackholeProgress, setBlackholeProgress] = useState(0);
+  const [recolorPreset, setRecolorPreset] = useState<string | null>(null);
+  const [recolorMap, setRecolorMap] = useState<Map<string, string> | null>(null);
+  const [photoMode, setPhotoMode] = useState(false);
+  const [screenshotTrigger, setScreenshotTrigger] = useState(0);
+  const [lotteryActive, setLotteryActive] = useState(false);
+  const [lotteryRemovedKeys, setLotteryRemovedKeys] = useState<Set<string>>(new Set());
+  const [lotteryPopVoxel, setLotteryPopVoxel] = useState<Voxel | null>(null);
+  const [lotteryPopKey, setLotteryPopKey] = useState(0);
   const revealTweenRef = useRef<gsap.core.Tween | null>(null);
   const explodeTweenRef = useRef<gsap.core.Tween | null>(null);
   const nukeTweenRef = useRef<gsap.core.Tween | null>(null);
   const nukeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gravityTweenRef = useRef<gsap.core.Tween | null>(null);
+  const blackholeTweenRef = useRef<gsap.core.Tween | null>(null);
+  const blackholeProgressRef = useRef(0);
+  const lotteryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lotteryRemainingRef = useRef<string[]>([]);
 
   useEffect(() => {
     setStamp(nowStamp());
@@ -95,6 +115,34 @@ export function ImageRunner() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exploded]);
+
+  useEffect(() => {
+    if (!plan) return;
+    if (nukeTimeoutRef.current) clearTimeout(nukeTimeoutRef.current);
+    nukeTweenRef.current?.kill();
+    gravityTweenRef.current?.kill();
+    setNukeMode(false);
+    setShowMissile(false);
+    setNukeFlash(false);
+    setGravityActive(false);
+    setGravityProgress(0);
+    setGravityOffsets(null);
+    setGravityRestoring(false);
+    setDisco(false);
+    blackholeTweenRef.current?.kill();
+    blackholeProgressRef.current = 0;
+    setBlackholeProgress(0);
+    setRecolorPreset(null);
+    setRecolorMap(null);
+    setPhotoMode(false);
+    if (lotteryIntervalRef.current) { clearInterval(lotteryIntervalRef.current); lotteryIntervalRef.current = null; }
+    setLotteryActive(false);
+    setLotteryRemovedKeys(new Set());
+    setLotteryPopVoxel(null);
+    setExploded(false);
+    setExplode(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan]);
 
   useEffect(() => {
     if (!plan) return;
@@ -406,6 +454,174 @@ export function ImageRunner() {
     }, 1100);
   }
 
+  function computeGravityOffsets(voxels: Voxel[]): Map<string, number> {
+    const columns = new Map<string, number[]>();
+    for (const v of voxels) {
+      const col = `${v.coord[0]},${v.coord[2]}`;
+      let arr = columns.get(col);
+      if (!arr) { arr = []; columns.set(col, arr); }
+      arr.push(v.coord[1]);
+    }
+    for (const arr of columns.values()) arr.sort((a, b) => a - b);
+    const offsets = new Map<string, number>();
+    for (const v of voxels) {
+      const col = columns.get(`${v.coord[0]},${v.coord[2]}`)!;
+      const rank = col.indexOf(v.coord[1]);
+      offsets.set(`${v.coord[0]},${v.coord[1]},${v.coord[2]}`, rank - v.coord[1]);
+    }
+    return offsets;
+  }
+
+  function triggerGravity() {
+    if (!plan) return;
+    gravityTweenRef.current?.kill();
+    if (gravityActive) {
+      // Spring back to original — simple ease-out, no bounce
+      setGravityRestoring(true);
+      const obj = { v: gravityProgress };
+      gravityTweenRef.current = gsap.to(obj, {
+        v: 0,
+        duration: 0.65,
+        ease: 'power3.out',
+        onUpdate: () => setGravityProgress(obj.v),
+        onComplete: () => {
+          setGravityActive(false);
+          setGravityOffsets(null);
+          setGravityRestoring(false);
+        },
+      });
+    } else {
+      // Collapse with bounce physics — longer duration lets bounces breathe
+      const offsets = computeGravityOffsets(plan.voxels);
+      setGravityOffsets(offsets);
+      setGravityActive(true);
+      setGravityRestoring(false);
+      const obj = { v: 0 };
+      gravityTweenRef.current = gsap.to(obj, {
+        v: 1,
+        duration: 1.8,
+        ease: 'none',
+        onUpdate: () => setGravityProgress(obj.v),
+      });
+    }
+  }
+
+  // ── Black hole ──────────────────────────────────────────────────────────────
+
+  function triggerBlackhole() {
+    if (!plan || buildMode) return;
+    blackholeTweenRef.current?.kill();
+    const cur = blackholeProgressRef.current;
+    const obj = { v: cur };
+    if (cur < 0.5) {
+      blackholeTweenRef.current = gsap.to(obj, {
+        v: 1, duration: 1.6, ease: 'power2.in',
+        onUpdate: () => { blackholeProgressRef.current = obj.v; setBlackholeProgress(obj.v); },
+      });
+    } else {
+      blackholeTweenRef.current = gsap.to(obj, {
+        v: 0, duration: 1.4, ease: 'power3.out',
+        onUpdate: () => { blackholeProgressRef.current = obj.v; setBlackholeProgress(obj.v); },
+      });
+    }
+  }
+
+  // ── Palette roulette ────────────────────────────────────────────────────────
+
+  const PRESETS: Record<string, string[]> = {
+    fire:   ['bright-light-yellow','yellow','orange','dark-orange','red','dark-red','dark-brown'],
+    ocean:  ['white','light-bluish-gray','lavender','sand-blue','medium-blue','blue','dark-blue'],
+    matrix: ['bright-light-yellow','lime','bright-green','green','dark-green','black'],
+    candy:  ['white','bright-light-yellow','coral','pink','dark-pink','magenta','purple'],
+  };
+  const PRESET_ORDER = ['fire', 'ocean', 'matrix', 'candy'];
+
+  function hexLum(hex: string): number {
+    const r = parseInt(hex.slice(0, 2), 16) / 255;
+    const g = parseInt(hex.slice(2, 4), 16) / 255;
+    const b = parseInt(hex.slice(4, 6), 16) / 255;
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
+  function buildRecolorMap(voxels: Voxel[], preset: string | null): Map<string, string> | null {
+    if (!preset) return null;
+    const uniqueIds = [...new Set(voxels.map((v) => v.colorId))];
+    const paletteLookup = Object.fromEntries(
+      PALETTE.map((c) => [c.id, c.hex]),
+    );
+    const sorted = [...uniqueIds].sort(
+      (a, b) => hexLum(paletteLookup[a] ?? 'ffffff') - hexLum(paletteLookup[b] ?? 'ffffff'),
+    );
+    let themeIds: string[];
+    if (preset === 'random') {
+      themeIds = PALETTE.map((c) => c.id);
+    } else {
+      themeIds = [...(PRESETS[preset] ?? [])].sort(
+        (a, b) => hexLum(paletteLookup[a] ?? 'ffffff') - hexLum(paletteLookup[b] ?? 'ffffff'),
+      );
+    }
+    const map = new Map<string, string>();
+    sorted.forEach((id, i) => {
+      if (preset === 'random') {
+        map.set(id, themeIds[Math.floor(Math.random() * themeIds.length)]);
+      } else {
+        map.set(id, themeIds[i % themeIds.length]);
+      }
+    });
+    return map;
+  }
+
+  function cycleRecolor() {
+    if (!plan) return;
+    const next = recolorPreset === null
+      ? PRESET_ORDER[0]
+      : recolorPreset === PRESET_ORDER[PRESET_ORDER.length - 1]
+        ? null
+        : PRESET_ORDER[PRESET_ORDER.indexOf(recolorPreset) + 1];
+    setRecolorPreset(next);
+    setRecolorMap(buildRecolorMap(plan.voxels, next));
+  }
+
+  // ── Lottery ─────────────────────────────────────────────────────────────────
+
+  function startLottery() {
+    if (!plan) return;
+    lotteryRemainingRef.current = plan.voxels.map(
+      (v) => `${v.coord[0]},${v.coord[1]},${v.coord[2]}`,
+    );
+    setLotteryActive(true);
+    setLotteryRemovedKeys(new Set());
+    lotteryIntervalRef.current = setInterval(() => {
+      const arr = lotteryRemainingRef.current;
+      if (arr.length === 0) {
+        clearInterval(lotteryIntervalRef.current!);
+        lotteryIntervalRef.current = null;
+        setLotteryActive(false);
+        return;
+      }
+      const idx = Math.floor(Math.random() * arr.length);
+      const key = arr[idx];
+      arr[idx] = arr[arr.length - 1];
+      arr.pop();
+      const [x, y, z] = key.split(',').map(Number);
+      const voxel = plan.voxels.find(
+        (v) => v.coord[0] === x && v.coord[1] === y && v.coord[2] === z,
+      ) ?? null;
+      setLotteryPopVoxel(voxel);
+      setLotteryPopKey((k) => k + 1);
+      setLotteryRemovedKeys((prev) => { const s = new Set(prev); s.add(key); return s; });
+    }, 180);
+  }
+
+  function resetLottery() {
+    if (lotteryIntervalRef.current) { clearInterval(lotteryIntervalRef.current); lotteryIntervalRef.current = null; }
+    setLotteryActive(false);
+    setLotteryRemovedKeys(new Set());
+    setLotteryPopVoxel(null);
+  }
+
+  // ── Generic opt update ──────────────────────────────────────────────────────
+
   function update<K extends keyof ClientVoxelizeOpts>(key: K, value: ClientVoxelizeOpts[K]) {
     setOpts((prev) => ({ ...prev, [key]: value }));
   }
@@ -623,6 +839,137 @@ export function ImageRunner() {
                 <div className="mt-1">{error}</div>
               </div>
             )}
+
+            {plan && (
+              <>
+                <Divider />
+                <SectionHeader index="03" title="FX" subtitle="Modes & effects" />
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBuildMode((b) => !b)}
+                    aria-pressed={buildMode}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] ${
+                      buildMode ? 'bg-red text-paper hover:bg-red hover:text-paper' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {buildMode ? '⨉ Exit build' : '▷ Build mode'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (nukeMode) {
+                        nukeTweenRef.current?.kill();
+                        setNukeMode(false);
+                        const obj = { v: explode };
+                        explodeTweenRef.current = gsap.to(obj, {
+                          v: 0, duration: 0.9, ease: 'power2.inOut',
+                          onUpdate: () => setExplode(obj.v),
+                        });
+                      } else {
+                        setExploded((x) => !x);
+                      }
+                    }}
+                    aria-pressed={exploded || nukeMode}
+                    disabled={buildMode}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                      exploded || nukeMode ? 'bg-red text-paper hover:bg-red hover:text-paper' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {exploded || nukeMode ? '⊙ Reassemble' : '✦ Explode'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={triggerGravity}
+                    disabled={buildMode || showMissile || nukeMode}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                      gravityActive ? 'bg-red text-paper hover:bg-red hover:text-paper' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {gravityActive ? '▲ Restore' : '▼ Gravity'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={triggerNuke}
+                    disabled={buildMode || showMissile}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                      nukeMode || showMissile ? 'bg-red text-paper hover:bg-red hover:text-paper' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {showMissile ? '☢ …' : '☢ Nuke'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisco((d) => !d)}
+                    disabled={buildMode}
+                    aria-pressed={disco}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                      disco ? 'bg-yellow text-ink hover:bg-yellow hover:text-ink' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    ★ Disco
+                  </button>
+                  <button
+                    type="button"
+                    onClick={triggerBlackhole}
+                    disabled={buildMode}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                      blackholeProgress > 0.05 ? 'bg-ink text-paper hover:bg-ink hover:text-paper' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {blackholeProgress > 0.95 ? '◎ Emerge' : blackholeProgress > 0.05 ? '◯ …' : '◯ Black hole'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cycleRecolor}
+                    disabled={buildMode}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                      recolorPreset ? 'bg-blue text-paper hover:bg-blue hover:text-paper' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {recolorPreset ? `⬡ ${recolorPreset}` : '⬡ Recolor'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoMode((p) => !p)}
+                    disabled={buildMode}
+                    aria-pressed={photoMode}
+                    className={`press py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                      photoMode ? 'bg-green text-paper hover:bg-green hover:text-paper' : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {photoMode ? '⬜ Exit photo' : '⬜ Photo'}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (lotteryActive) {
+                      if (lotteryIntervalRef.current) { clearInterval(lotteryIntervalRef.current); lotteryIntervalRef.current = null; }
+                      setLotteryActive(false);
+                    } else if (lotteryRemovedKeys.size > 0) {
+                      resetLottery();
+                    } else {
+                      startLottery();
+                    }
+                  }}
+                  disabled={buildMode}
+                  className={`press w-full py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] disabled:opacity-40 ${
+                    lotteryActive
+                      ? 'bg-red text-paper hover:bg-red hover:text-paper'
+                      : lotteryRemovedKeys.size > 0
+                        ? 'bg-yellow text-ink hover:bg-yellow hover:text-ink'
+                        : 'bg-paper text-ink'
+                  }`}
+                >
+                  {lotteryActive
+                    ? `■ Stop — ${plan.voxels.length - lotteryRemovedKeys.size} left`
+                    : lotteryRemovedKeys.size > 0
+                      ? `↺ Restore all ${plan.voxels.length} pcs`
+                      : '✂ Lottery'}
+                </button>
+              </>
+            )}
           </div>
         </aside>
 
@@ -644,8 +991,8 @@ export function ImageRunner() {
                   : 'awaiting input'}
               </div>
 
-              {plan && (
-                <div className="absolute right-3 top-3 z-10 flex gap-2">
+              {false && plan && (
+                <div className="absolute right-3 top-3 z-10 flex flex-wrap justify-end gap-2" style={{ maxWidth: '560px' }}>
                   <button
                     type="button"
                     onClick={() => setBuildMode((b) => !b)}
@@ -687,6 +1034,18 @@ export function ImageRunner() {
                   </button>
                   <button
                     type="button"
+                    onClick={triggerGravity}
+                    disabled={buildMode || showMissile || nukeMode}
+                    className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
+                      gravityActive
+                        ? 'bg-red text-paper hover:bg-red hover:text-paper'
+                        : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {gravityActive ? '▲ Restore' : '▼ Gravity'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={triggerNuke}
                     disabled={buildMode || showMissile}
                     className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
@@ -696,6 +1055,79 @@ export function ImageRunner() {
                     }`}
                   >
                     {showMissile ? '☢ …' : '☢ Nuke'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisco((d) => !d)}
+                    disabled={buildMode}
+                    aria-pressed={disco}
+                    className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
+                      disco
+                        ? 'bg-yellow text-ink hover:bg-yellow hover:text-ink'
+                        : 'bg-paper text-ink'
+                    }`}
+                  >
+                    ★ Disco
+                  </button>
+                  <button
+                    type="button"
+                    onClick={triggerBlackhole}
+                    disabled={buildMode}
+                    className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
+                      blackholeProgress > 0.05
+                        ? 'bg-ink text-paper hover:bg-ink hover:text-paper'
+                        : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {blackholeProgress > 0.95 ? '◎ Emerge' : blackholeProgress > 0.05 ? '◯ …' : '◯ Black hole'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cycleRecolor}
+                    disabled={buildMode}
+                    className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
+                      recolorPreset
+                        ? 'bg-blue text-paper hover:bg-blue hover:text-paper'
+                        : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {recolorPreset ? `⬡ ${recolorPreset}` : '⬡ Recolor'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoMode((p) => !p)}
+                    disabled={buildMode}
+                    aria-pressed={photoMode}
+                    className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
+                      photoMode
+                        ? 'bg-green text-paper hover:bg-green hover:text-paper'
+                        : 'bg-paper text-ink'
+                    }`}
+                  >
+                    ⬜ Photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (lotteryActive) {
+                        if (lotteryIntervalRef.current) { clearInterval(lotteryIntervalRef.current); lotteryIntervalRef.current = null; }
+                        setLotteryActive(false);
+                      } else if (lotteryRemovedKeys.size > 0) {
+                        resetLottery();
+                      } else {
+                        startLottery();
+                      }
+                    }}
+                    disabled={buildMode}
+                    className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
+                      lotteryActive
+                        ? 'bg-red text-paper hover:bg-red hover:text-paper'
+                        : lotteryRemovedKeys.size > 0
+                          ? 'bg-yellow text-ink hover:bg-yellow hover:text-ink'
+                          : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {lotteryActive ? '■ Stop' : lotteryRemovedKeys.size > 0 ? `↺ Restore (${(plan?.voxels.length ?? 0) - lotteryRemovedKeys.size})` : '✂ Lottery'}
                   </button>
                 </div>
               )}
@@ -710,11 +1142,63 @@ export function ImageRunner() {
                     nuke={nukeMode}
                     missileActive={showMissile}
                     impactKey={impactKey}
+                    gravityOffsets={gravityOffsets ?? undefined}
+                    gravityProgress={gravityProgress}
+                    gravityRestoring={gravityRestoring}
+                    disco={disco}
+                    blackholeProgress={blackholeProgress}
+                    hiddenKeys={lotteryRemovedKeys.size > 0 ? lotteryRemovedKeys : undefined}
+                    lotteryPopVoxel={lotteryPopVoxel}
+                    lotteryPopKey={lotteryPopKey}
+                    recolorMap={recolorMap ?? undefined}
+                    photoMode={photoMode}
+                    screenshotTrigger={screenshotTrigger}
+                    posterData={photoMode && slicedPlan ? ({
+                      sizeX: slicedPlan.size.x,
+                      sizeY: slicedPlan.size.y,
+                      sizeZ: slicedPlan.size.z,
+                      pieceCount: slicedPlan.voxels.length,
+                      stamp,
+                    } satisfies PosterData) : null}
                   />
                 ) : (
                   <EmptyState />
                 )}
               </div>
+
+              {photoMode && slicedPlan && (
+                <>
+                  <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-6">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="display-xl text-[48px] leading-none text-ink">BLOCKED</div>
+                        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-ink-2">
+                          {slicedPlan.size.x} × {slicedPlan.size.y} × {slicedPlan.size.z} units
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="numeric text-[42px] font-bold leading-none text-red">
+                          {slicedPlan.voxels.length.toLocaleString()}
+                        </div>
+                        <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-2">pieces</div>
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div className="font-mono text-[9px] uppercase tracking-[0.22em] text-ink-2">{stamp}</div>
+                      <div className="font-mono text-[9px] uppercase tracking-[0.22em] text-ink-2">blocked.victorgalvez.dev</div>
+                    </div>
+                  </div>
+                  <div className="absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
+                    <button
+                      type="button"
+                      onClick={() => setScreenshotTrigger((t) => t + 1)}
+                      className="press bg-ink px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-paper hover:bg-ink"
+                    >
+                      ⬇ Save PNG
+                    </button>
+                  </div>
+                </>
+              )}
 
               {nukeFlash && (
                 <div className="nuke-flash pointer-events-none absolute inset-0 z-20 bg-white" />
