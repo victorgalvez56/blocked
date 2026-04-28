@@ -4,7 +4,7 @@
 
 > *Drop an image. Get a buildable brick figure.*
 
-A 3D brick design studio that voxelizes any image into a real, orderable brick build. Drop a PNG, tune the geometry sliders, and get back a 3D figure snapped to the official Lego color palette — with a full Bill of Materials ready to paste into BrickLink. Built with Next.js 16, React Three Fiber, and OpenAI.
+A 3D brick design studio that voxelizes any image into a real, orderable brick build. Drop a PNG, tune the geometry sliders, and get back a 3D figure snapped to the official Lego color palette — with a full Bill of Materials ready to paste into BrickLink. Built with Next.js 16 and React Three Fiber.
 
 ![Blocked preview](docs/preview.gif)
 
@@ -21,8 +21,6 @@ A 3D brick design studio that voxelizes any image into a real, orderable brick b
 
 Blocked turns any image into a 3D voxelized brick figure you can actually build with real Lego-compatible pieces. A front-driven voxelizer reconstructs shape and depth from silhouettes; the studio editor lets you tune resolution, density, and background cut in real time. When you're done, export a BrickLink XML parts list — 34 official colors, exact piece counts by size.
 
-The AI pipeline (gpt-image-1 + Trellis) is there for going from text to a 3D figure without a source image, but the core voxelizer is instant and runs entirely client-side.
-
 ## Tech stack
 
 | Layer | Tech |
@@ -31,8 +29,6 @@ The AI pipeline (gpt-image-1 + Trellis) is there for going from text to a 3D fig
 | UI | React 19, Tailwind CSS v4 |
 | 3D / rendering | Three.js, React Three Fiber, Drei |
 | Animation | GSAP 3 |
-| AI generation | OpenAI DALL-E / gpt-image-1, Replicate (Trellis) |
-| Backend / auth | Supabase |
 | Video pipeline | Remotion |
 | Testing | Vitest, Testing Library |
 
@@ -44,7 +40,6 @@ The AI pipeline (gpt-image-1 + Trellis) is there for going from text to a 3D fig
 git clone https://github.com/victorgalvez56/blocked.git
 cd blocked
 pnpm install
-cp .env.example .env.local   # add OPENAI_API_KEY, SUPABASE_* keys
 pnpm dev
 ```
 
@@ -53,19 +48,20 @@ Open [http://localhost:3000](http://localhost:3000) and drop an image on the stu
 ## Architecture
 
 ```
-┌──────────────────────────────┐    ┌──────────────────────────────┐
-│  Studio  (React Three Fiber) │    │  AI pipeline  (Next.js API)  │
-│  — source image panel        │    │  /api/dalle-image            │
-│  — geometry sliders          │ ←→ │  /api/dalle-views  (4-view)  │
-│  — live 3D voxel preview     │    │  /api/dalle-views-8          │
-│  — BOM panel + export        │    │  /api/lab/generate-3d        │
-└──────────────────────────────┘    └──────────────────────────────┘
-                    ↓
+     image drop
+          ↓
      voxelizer  (client-side, Three.js orthographic cameras)
 ┌──────────────────────────────┐
 │  front silhouette → depth    │
 │  side / top as thickness cap │
 │  palette snap + brick merge  │
+└──────────────────────────────┘
+          ↓
+┌──────────────────────────────┐
+│  Studio  (React Three Fiber) │
+│  — geometry sliders          │
+│  — live 3D voxel preview     │
+│  — BOM panel + export        │
 └──────────────────────────────┘
 ```
 
@@ -75,17 +71,12 @@ Open [http://localhost:3000](http://localhost:3000) and drop an image on the stu
 .
 ├── src/
 │   ├── app/
-│   │   ├── studio/         # main design studio
-│   │   ├── lab/            # AI 3D experiments
-│   │   └── api/            # AI generation endpoints
+│   │   └── studio/         # main design studio
 │   ├── lib/
 │   │   ├── voxelizer/      # image → 3D voxel grid
 │   │   ├── exporters/      # BrickLink XML export
-│   │   ├── color/          # official Lego palette (34 colors)
-│   │   └── openai/         # AI prompt helpers
+│   │   └── color/          # official Lego palette (34 colors)
 │   └── types/              # shared TypeScript types
-├── remotion/               # video reel pipeline
-├── specs/                  # AI pipeline & scaffold docs
 ├── data/                   # brick palette data
 └── docs/
     └── preview.gif
@@ -110,13 +101,6 @@ The front view drives the silhouette and shape. Side and top views act as per-ro
 | Explode | Separates bricks for interior inspection |
 | Export | BrickLink XML — paste into Wanted List |
 
-### Remotion video pipeline
-
-```bash
-pnpm remotion:studio        # preview the reel
-pnpm remotion:render        # renders out/blocked-reel.mp4
-```
-
 ## Contributing
 
 PRs welcome. The codebase is small enough to read top-to-bottom in an afternoon.
@@ -137,7 +121,6 @@ PRs welcome. The codebase is small enough to read top-to-bottom in an afternoon.
 - Layer visibility toggle for working on interior sections
 - Step-by-step build instructions exported as a layer-by-layer PDF
 - Estimated cost preview based on BrickLink marketplace prices
-- Public gallery: save builds to Supabase, share via URL
 
 ### Conventions
 
