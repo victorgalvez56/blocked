@@ -20,6 +20,11 @@ const STUD_RADIUS = 0.31;
 const STUD_HEIGHT = 0.21;
 const EXPLODE_REACH = 18; // world units that 100% explode pushes a max-radius brick out by
 
+function brickRotHash(coord: readonly [number, number, number], salt: number): number {
+  const n = coord[0] * 127 + coord[1] * 311 + coord[2] * 74 + salt * 997;
+  return Math.abs(Math.sin(n) * 43758.5453) % 1;
+}
+
 // Build a brick: open bottom (cavity), 4 outer walls + top cap.
 // Centered on the origin, sy along Y, sx × sz on the floor plane.
 function buildOpenBottomBrick(sx: number, sy: number, sz: number, wall: number): THREE.BufferGeometry {
@@ -107,12 +112,14 @@ function BrickInstancedGroup({
   emphasized,
   explode,
   center,
+  nuke,
 }: {
   group: BrickGroup;
   dimmed: boolean;
   emphasized: boolean;
   explode: number;
   center: { x: number; y: number; z: number };
+  nuke?: boolean;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const count = group.voxels.length;
@@ -129,11 +136,21 @@ function BrickInstancedGroup({
       const bz = v.coord[2] + sz / 2 - 0.5;
       const [ox, oy, oz] = explodeOffset([bx, by, bz], center, explode);
       dummy.position.set(bx + ox, by + oy, bz + oz);
+      if (nuke && explode > 0) {
+        const spin = Math.min(explode, 1.5);
+        dummy.rotation.set(
+          brickRotHash(v.coord, 0) * Math.PI * 6 * spin,
+          brickRotHash(v.coord, 1) * Math.PI * 6 * spin,
+          brickRotHash(v.coord, 2) * Math.PI * 6 * spin,
+        );
+      } else {
+        dummy.rotation.set(0, 0, 0);
+      }
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [group.voxels, count, sx, sz, explode, center.x, center.y, center.z]);
+  }, [group.voxels, count, sx, sz, explode, center.x, center.y, center.z, nuke]);
 
   const geometry = useMemo(() => getBrickGeometry(sx, sz), [sx, sz]);
 
@@ -258,16 +275,133 @@ function CurrentVoxelSpotlight({
   );
 }
 
+function Missile({
+  active,
+  center,
+}: {
+  active: boolean;
+  center: { x: number; y: number; z: number };
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const tRef = useRef(1);
+
+  useEffect(() => {
+    if (active) tRef.current = 0;
+  }, [active]);
+
+  useFrame((_, delta) => {
+    const g = groupRef.current;
+    if (!g) return;
+    if (!active) {
+      g.visible = false;
+      return;
+    }
+    g.visible = true;
+    tRef.current = Math.min(1, tRef.current + delta / 1.1);
+    const t = tRef.current;
+    const easeIn = t * t * t;
+    g.position.set(center.x, center.y + 30 * (1 - easeIn), center.z);
+  });
+
+  return (
+    <group ref={groupRef} visible={false}>
+      {/* Body */}
+      <mesh>
+        <cylinderGeometry args={[0.28, 0.28, 2.4, 6]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.7} />
+      </mesh>
+      {/* Nose cone — tip points down (-Y), base at body bottom */}
+      <mesh position={[0, -1.7, 0]} rotation={[Math.PI, 0, 0]}>
+        <coneGeometry args={[0.28, 1.0, 6]} />
+        <meshStandardMaterial color="#999" metalness={0.3} roughness={0.4} />
+      </mesh>
+      {/* Red danger band */}
+      <mesh position={[0, -0.5, 0]}>
+        <cylinderGeometry args={[0.29, 0.29, 0.18, 6]} />
+        <meshStandardMaterial color="#cc0000" />
+      </mesh>
+      {/* 4 fins at tail */}
+      <group position={[0, 1.0, 0]}>
+        {[0, 1, 2, 3].map((i) => (
+          <mesh key={i} rotation={[0, (i * Math.PI) / 2, 0]}>
+            <boxGeometry args={[0.06, 0.9, 0.6]} />
+            <meshStandardMaterial color="#111" roughness={0.8} />
+          </mesh>
+        ))}
+      </group>
+      {/* Exhaust flame */}
+      <mesh position={[0, 2.0, 0]}>
+        <coneGeometry args={[0.18, 0.8, 6]} />
+        <meshStandardMaterial
+          color="#ff8800"
+          emissive="#ff4400"
+          emissiveIntensity={3}
+          transparent
+          opacity={0.9}
+        />
+      </mesh>
+      <pointLight position={[0, 2.2, 0]} color="#ff6600" intensity={4} distance={8} decay={2} />
+    </group>
+  );
+}
+
+function ShockwaveRing({
+  impactKey,
+  center,
+}: {
+  impactKey: number;
+  center: { x: number; y: number; z: number };
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+  const tRef = useRef(1);
+
+  useEffect(() => {
+    tRef.current = 0;
+  }, [impactKey]);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current || !matRef.current) return;
+    if (tRef.current >= 1) {
+      meshRef.current.visible = false;
+      return;
+    }
+    tRef.current = Math.min(1, tRef.current + delta * 2.5);
+    const t = tRef.current;
+    meshRef.current.visible = true;
+    meshRef.current.scale.setScalar(t * 20);
+    matRef.current.opacity = (1 - t) * 0.85;
+  });
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={[center.x, center.y, center.z]}
+      rotation={[Math.PI / 2, 0, 0]}
+      visible={false}
+    >
+      <torusGeometry args={[1, 0.06, 6, 48]} />
+      <meshBasicMaterial ref={matRef} color="#ff6600" transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
+}
+
 export function VoxelPreview({
   plan,
   highlight = null,
   explode = 0,
   currentVoxel = null,
+  nuke = false,
+  missileActive = false,
+  impactKey = 0,
 }: {
   plan: VoxelGridSnapshot;
   highlight?: Highlight;
   explode?: number;
   currentVoxel?: Voxel | null;
+  nuke?: boolean;
+  missileActive?: boolean;
+  impactKey?: number;
 }) {
   const center = useMemo(
     () => ({
@@ -390,6 +524,7 @@ export function VoxelPreview({
             emphasized={highlight !== null && match}
             explode={explode}
             center={center}
+            nuke={nuke}
           />
         );
       })}
@@ -412,6 +547,9 @@ export function VoxelPreview({
       {currentVoxel && (
         <CurrentVoxelSpotlight voxel={currentVoxel} center={center} explode={explode} />
       )}
+
+      <Missile active={missileActive} center={center} />
+      <ShockwaveRing impactKey={impactKey} center={center} />
     </Canvas>
   );
 }

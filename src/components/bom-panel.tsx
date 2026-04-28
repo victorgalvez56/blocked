@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { buildBomEntries, type BomEntry } from '@/lib/bom';
 import { buildBricklinkXml, buildPlainCsv } from '@/lib/exporters/bricklink-xml';
+import { buildObjModel } from '@/lib/exporters/obj-3d';
 import { BrickIcon } from './brick-icon';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
 import type { Highlight } from './voxel-preview';
@@ -190,8 +191,19 @@ export function BomPanel({
                   CSV
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const { obj, mtl } = buildObjModel(plan);
+                  downloadBlob(obj, 'blocked-build.obj', 'text/plain');
+                  downloadBlob(mtl, 'blocked-build.mtl', 'text/plain');
+                }}
+                className="press w-full bg-paper px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-ink"
+              >
+                OBJ + MTL (3D)
+              </button>
               <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-2">
-                Paste .bsx into BrickLink Wanted List
+                Paste .bsx into BrickLink Wanted List · Import .obj into Blender
               </div>
             </div>
           </>

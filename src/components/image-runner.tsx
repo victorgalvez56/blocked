@@ -37,6 +37,7 @@ const ALL_VIEW_KEYS: ViewKey[] = ['front', 'side', 'top'];
 interface ImageEntry {
   el: HTMLImageElement;
   url: string;
+  mimeType?: string;
 }
 
 function nowStamp(): string {
@@ -65,8 +66,14 @@ export function ImageRunner() {
   const [buildMode, setBuildMode] = useState(false);
   const [buildIndex, setBuildIndex] = useState(0);
   const [buildPlaying, setBuildPlaying] = useState(false);
+  const [nukeMode, setNukeMode] = useState(false);
+  const [nukeFlash, setNukeFlash] = useState(false);
+  const [showMissile, setShowMissile] = useState(false);
+  const [impactKey, setImpactKey] = useState(0);
   const revealTweenRef = useRef<gsap.core.Tween | null>(null);
   const explodeTweenRef = useRef<gsap.core.Tween | null>(null);
+  const nukeTweenRef = useRef<gsap.core.Tween | null>(null);
+  const nukeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setStamp(nowStamp());
@@ -224,7 +231,7 @@ export function ImageRunner() {
   async function loadView(key: ViewKey, file: File) {
     try {
       const img = await loadImageElement(file);
-      setViews((prev) => ({ ...prev, [key]: { el: img, url: img.src } }));
+      setViews((prev) => ({ ...prev, [key]: { el: img, url: img.src, mimeType: file.type } }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'image load failed');
     }
@@ -370,6 +377,35 @@ export function ImageRunner() {
     }
   }
 
+  function triggerNuke() {
+    if (!plan || buildMode) return;
+    if (nukeTimeoutRef.current) clearTimeout(nukeTimeoutRef.current);
+    nukeTweenRef.current?.kill();
+    explodeTweenRef.current?.kill();
+    setExploded(false);
+    setNukeMode(false);
+    setShowMissile(false);
+    setNukeFlash(false);
+    setExplode(0);
+
+    setShowMissile(true);
+
+    nukeTimeoutRef.current = setTimeout(() => {
+      setShowMissile(false);
+      setNukeFlash(true);
+      setNukeMode(true);
+      setImpactKey((k) => k + 1);
+      const obj = { v: 0 };
+      nukeTweenRef.current = gsap.to(obj, {
+        v: 4,
+        duration: 0.45,
+        ease: 'power4.out',
+        onUpdate: () => setExplode(obj.v),
+      });
+      setTimeout(() => setNukeFlash(false), 400);
+    }, 1100);
+  }
+
   function update<K extends keyof ClientVoxelizeOpts>(key: K, value: ClientVoxelizeOpts[K]) {
     setOpts((prev) => ({ ...prev, [key]: value }));
   }
@@ -429,6 +465,7 @@ export function ImageRunner() {
 
             <DropZone
               imageUrl={views.front?.url ?? null}
+              imageMimeType={views.front?.mimeType ?? null}
               onFile={(f) => loadView('front', f)}
             />
 
@@ -623,16 +660,42 @@ export function ImageRunner() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setExploded((x) => !x)}
-                    aria-pressed={exploded}
+                    onClick={() => {
+                      if (nukeMode) {
+                        nukeTweenRef.current?.kill();
+                        setNukeMode(false);
+                        const obj = { v: explode };
+                        explodeTweenRef.current = gsap.to(obj, {
+                          v: 0,
+                          duration: 0.9,
+                          ease: 'power2.inOut',
+                          onUpdate: () => setExplode(obj.v),
+                        });
+                      } else {
+                        setExploded((x) => !x);
+                      }
+                    }}
+                    aria-pressed={exploded || nukeMode}
                     disabled={buildMode}
                     className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
-                      exploded
+                      exploded || nukeMode
                         ? 'bg-red text-paper hover:bg-red hover:text-paper'
                         : 'bg-paper text-ink'
                     }`}
                   >
-                    {exploded ? '⊙ Reassemble' : '✦ Explode'}
+                    {exploded || nukeMode ? '⊙ Reassemble' : '✦ Explode'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={triggerNuke}
+                    disabled={buildMode || showMissile}
+                    className={`press px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] disabled:opacity-40 ${
+                      nukeMode || showMissile
+                        ? 'bg-red text-paper hover:bg-red hover:text-paper'
+                        : 'bg-paper text-ink'
+                    }`}
+                  >
+                    {showMissile ? '☢ …' : '☢ Nuke'}
                   </button>
                 </div>
               )}
@@ -644,11 +707,18 @@ export function ImageRunner() {
                     highlight={highlight}
                     explode={explode}
                     currentVoxel={currentVoxel}
+                    nuke={nukeMode}
+                    missileActive={showMissile}
+                    impactKey={impactKey}
                   />
                 ) : (
                   <EmptyState />
                 )}
               </div>
+
+              {nukeFlash && (
+                <div className="nuke-flash pointer-events-none absolute inset-0 z-20 bg-white" />
+              )}
             </div>
           </div>
 
@@ -763,9 +833,11 @@ export function ImageRunner() {
 
 function DropZone({
   imageUrl,
+  imageMimeType,
   onFile,
 }: {
   imageUrl: string | null;
+  imageMimeType: string | null;
   onFile: (file: File) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -793,7 +865,21 @@ function DropZone({
         <img
           src={imageUrl}
           alt="source"
-          className="block max-h-[180px] w-full bg-ink object-contain"
+          className={`block max-h-[180px] w-full object-contain ${imageMimeType !== 'image/png' ? 'bg-ink' : ''}`}
+          style={
+            imageMimeType === 'image/png'
+              ? {
+                  backgroundImage:
+                    'linear-gradient(45deg,#ccc 25%,transparent 25%),' +
+                    'linear-gradient(-45deg,#ccc 25%,transparent 25%),' +
+                    'linear-gradient(45deg,transparent 75%,#ccc 75%),' +
+                    'linear-gradient(-45deg,transparent 75%,#ccc 75%)',
+                  backgroundSize: '12px 12px',
+                  backgroundPosition: '0 0,0 6px,6px -6px,-6px 0',
+                  backgroundColor: '#fff',
+                }
+              : undefined
+          }
         />
       ) : (
         <div className="flex h-full min-h-[144px] flex-col items-center justify-center gap-2 px-4 py-6 text-center">
