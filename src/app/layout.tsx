@@ -23,7 +23,7 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'Blocked — From idea to a buildable brick',
   description:
-    'Drop an image. Get a 3D Lego-compatible voxel build, instantly. A serious tool for serious play.',
+    'Drop an image. Get a 3D voxel build, instantly. A serious tool for serious play.',
 };
 
 export default function RootLayout({

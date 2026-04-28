@@ -91,7 +91,7 @@ export function Landing() {
       <section className="relative grid grid-cols-1 gap-10 px-6 pt-12 pb-20 md:px-12 lg:grid-cols-[1.2fr_1fr] lg:gap-16 lg:pt-16 lg:pb-28">
         <div className="flex flex-col justify-center">
           <span className="land-eyebrow font-mono text-[11px] font-bold uppercase tracking-[0.28em] text-red">
-            ◉ Image → 3D Voxel · Lego Edition
+            ◉ Image → 3D Voxel · Brick Edition
           </span>
 
           <h1 className="display-xl mt-6 text-[64px] leading-[0.86] tracking-tight md:text-[92px] lg:text-[112px]">
@@ -101,7 +101,7 @@ export function Landing() {
           </h1>
 
           <p className="land-tagline mt-6 max-w-xl text-[18px] leading-snug text-ink md:text-[20px]">
-            Take any image. Get a 3D Lego-compatible voxel build, instantly. A
+            Take any image. Get a 3D voxel brick build, instantly. A
             serious tool for serious play —{' '}
             <span className="font-bold">no AI guessing, no waiting, no costs.</span>
           </p>
@@ -121,7 +121,7 @@ export function Landing() {
 
           <ul className="mt-12 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Feature index="01" title="Edge-aware depth" body="Silhouettes round, not slab" />
-            <Feature index="02" title="Lego palette snap" body="34 official colors only" />
+            <Feature index="02" title="Brick palette snap" body="34 official colors only" />
             <Feature index="03" title="Live preview" body="Tune knobs, see updates" />
           </ul>
         </div>
@@ -170,7 +170,7 @@ export function Landing() {
             <span key={i} className="flex shrink-0 items-center gap-6 pr-6">
               <span>◉ DROP IMAGE</span>
               <span>◉ AUTO-VOXELIZE</span>
-              <span>◉ LEGO PALETTE</span>
+              <span>◉ BRICK PALETTE</span>
               <span>◉ ROTATE 360°</span>
               <span>◉ TUNE LIVE</span>
               <span>◉ NO API · NO COSTS</span>

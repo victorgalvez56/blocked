@@ -1,16 +1,16 @@
-import type { LegoColor, LegoPalette } from '@/types/palette.types';
+import type { BrickColor, BrickPalette } from '@/types/palette.types';
 import { ciede2000, rgbToLab, weightedRgbDistance, type LAB, type RGB } from './lab';
 
 export type ColorMetric = 'ciede2000' | 'weighted-rgb';
 
 interface PaletteIndex {
-  colors: LegoColor[];
+  colors: BrickColor[];
   labs: LAB[];
 }
 
-const indexCache = new WeakMap<LegoPalette, PaletteIndex>();
+const indexCache = new WeakMap<BrickPalette, PaletteIndex>();
 
-function indexFor(palette: LegoPalette): PaletteIndex {
+function indexFor(palette: BrickPalette): PaletteIndex {
   let idx = indexCache.get(palette);
   if (!idx) {
     idx = {
@@ -22,11 +22,11 @@ function indexFor(palette: LegoPalette): PaletteIndex {
   return idx;
 }
 
-export function nearestLegoColor(
+export function nearestBrickColor(
   rgb: RGB,
-  palette: LegoPalette,
+  palette: BrickPalette,
   metric: ColorMetric = 'ciede2000',
-): LegoColor {
+): BrickColor {
   if (palette.length === 0) throw new Error('palette is empty');
 
   if (metric === 'weighted-rgb') {
@@ -58,8 +58,8 @@ export function nearestLegoColor(
 
 export function quantizeRgbToPalette(
   rgb: RGB,
-  palette: LegoPalette,
+  palette: BrickPalette,
   metric: ColorMetric = 'ciede2000',
 ): string {
-  return nearestLegoColor(rgb, palette, metric).id;
+  return nearestBrickColor(rgb, palette, metric).id;
 }

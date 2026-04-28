@@ -8,7 +8,7 @@ import {
   MeshBVH,
 } from 'three-mesh-bvh';
 import { availableColors } from '@/lib/palette';
-import { nearestLegoColor } from '@/lib/color/nearest-lego';
+import { nearestBrickColor } from '@/lib/color/nearest-brick';
 import { packBricks } from './brick-packer';
 import { hollowGrid } from './hollow';
 import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
@@ -220,7 +220,7 @@ function sampleSurface(
         }
         const avg: [number, number, number] = [sr / count, sg / count, sb / count];
         // Snap to a dominant texture color first — kills lighting/shadow noise.
-        // Then nearestLegoColor maps the dominant to the closest Lego brick color.
+        // Then nearestBrickColor maps the dominant to the closest brick color.
         bestRgb = nearestDominant(avg, tex.dominantColors);
       } else {
         bestRgb = defaults.get(mesh) ?? [180, 180, 180];
@@ -322,7 +322,7 @@ export async function meshToVoxelGrid(
         if (votes < 2) continue;
 
         const rgb = sampleSurface(point, filteredMeshes, bvhs, textures, defaults);
-        const colorId = nearestLegoColor(rgb, palette).id;
+        const colorId = nearestBrickColor(rgb, palette).id;
 
         voxels.push({
           coord: [ix, iy, iz],

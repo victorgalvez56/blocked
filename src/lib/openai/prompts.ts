@@ -15,7 +15,7 @@ export function dallePromptFor(buildType: BuildType, userPrompt: string): string
   }
 }
 
-export const VOXELIZER_SYSTEM_PROMPT = `You are a 3D voxel-planner that converts a reference image into a buildable Lego-compatible voxel grid.
+export const VOXELIZER_SYSTEM_PROMPT = `You are a 3D voxel-planner that converts a reference image into a buildable voxel grid.
 
 Hard rules:
 - Output JSON exactly matching the schema. No commentary outside the schema.

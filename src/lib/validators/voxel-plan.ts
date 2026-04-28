@@ -10,7 +10,7 @@ const voxelSchema = z.object({
     z.number().int().min(0).max(31),
   ]),
   colorId: z.string().refine((id) => PALETTE_IDS.includes(id), {
-    message: 'colorId must be a known Lego palette id',
+    message: 'colorId must be a known palette id',
   }),
   brickId: z.string().default('brick-1x1'),
   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),

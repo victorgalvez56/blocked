@@ -5,6 +5,7 @@ import { buildBomEntries, type BomEntry } from '@/lib/bom';
 import { buildBricklinkXml, buildPlainCsv } from '@/lib/exporters/bricklink-xml';
 import { BrickIcon } from './brick-icon';
 import type { VoxelGridSnapshot } from '@/types/voxel.types';
+import type { Highlight } from './voxel-preview';
 
 function downloadBlob(content: string, filename: string, type: string) {
   const blob = new Blob([content], { type });
@@ -54,16 +55,22 @@ function groupByBrick(entries: BomEntry[]): BrickGroup[] {
   return arr;
 }
 
-export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
+export function BomPanel({
+  plan,
+  onHighlight,
+}: {
+  plan: VoxelGridSnapshot | null;
+  onHighlight?: (h: Highlight) => void;
+}) {
   const entries = useMemo<BomEntry[]>(() => (plan ? buildBomEntries(plan) : []), [plan]);
   const groups = useMemo<BrickGroup[]>(() => groupByBrick(entries), [entries]);
   const total = entries.reduce((s, e) => s + e.count, 0);
 
   return (
-    <aside className="border-t-2 border-ink bg-paper-2/40 lg:border-t-0 lg:border-l-2">
-      <div className="space-y-4 p-6 md:p-7">
-        <div className="flex items-baseline gap-3">
-          <span className="display-xl text-[34px] text-red">04</span>
+    <aside className="flex min-h-0 flex-col overflow-hidden border-t-2 border-ink bg-paper-2/40 lg:border-t-0 lg:border-l-2">
+      <div className="flex h-full min-h-0 flex-col gap-3 p-5 md:p-6">
+        <div className="flex shrink-0 items-baseline gap-3">
+          <span className="display-xl text-[34px] text-red">03</span>
           <div className="flex-1">
             <div className="display-xl text-[16px] uppercase tracking-tight text-ink">
               Pieces
@@ -82,7 +89,7 @@ export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
 
         {plan && (
           <>
-            <div className="flex items-baseline justify-between border-b-2 border-ink pb-2">
+            <div className="flex shrink-0 items-baseline justify-between border-b-2 border-ink pb-2">
               <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink-2">
                 Total
               </span>
@@ -92,9 +99,14 @@ export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
               </span>
             </div>
 
-            <ul className="-mx-1 max-h-[calc(100vh-280px)] space-y-3 overflow-y-auto pr-1">
+            <ul className="-mx-1 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {groups.map((g) => (
-                <li key={g.brickId} className="border-2 border-ink bg-paper">
+                <li
+                  key={g.brickId}
+                  className="border-2 border-ink bg-paper transition-colors hover:bg-yellow/30"
+                  onMouseEnter={() => onHighlight?.({ brickId: g.brickId })}
+                  onMouseLeave={() => onHighlight?.(null)}
+                >
                   <header className="flex items-center gap-3 border-b-2 border-ink bg-paper-2/60 px-3 py-2">
                     <BrickIcon brickId={g.brickId} color="#e8dfcb" size={42} />
                     <div className="min-w-0 flex-1">
@@ -122,7 +134,11 @@ export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
                     {g.colorEntries.map((c) => (
                       <li
                         key={c.key}
-                        className="flex items-center gap-2.5 px-3 py-1.5"
+                        className="flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-yellow/50"
+                        onMouseEnter={() =>
+                          onHighlight?.({ brickId: c.brickId, colorId: c.colorId })
+                        }
+                        onMouseLeave={() => onHighlight?.({ brickId: g.brickId })}
                       >
                         <BrickIcon brickId={c.brickId} color={c.colorHex} size={32} />
                         <div className="min-w-0 flex-1">
@@ -143,12 +159,12 @@ export function BomPanel({ plan }: { plan: VoxelGridSnapshot | null }) {
               ))}
             </ul>
 
-            <div className="border-t border-dashed border-line-strong pt-2 font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-2">
+            <div className="shrink-0 border-t border-dashed border-line-strong pt-2 font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-2">
               {groups.length} unique size{groups.length === 1 ? '' : 's'} ·{' '}
               {entries.length} unique part{entries.length === 1 ? '' : 's'}
             </div>
 
-            <div className="space-y-2 pt-1">
+            <div className="shrink-0 space-y-2">
               <div className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-ink-2">
                 Export
               </div>

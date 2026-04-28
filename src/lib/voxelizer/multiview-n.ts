@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { availableColors } from '@/lib/palette';
-import { nearestLegoColor } from '@/lib/color/nearest-lego';
+import { nearestBrickColor } from '@/lib/color/nearest-brick';
 import { packBricks } from './brick-packer';
 import { hollowGrid } from './hollow';
 import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
@@ -176,7 +176,7 @@ export function voxelizeMultiviewN(
         const g = colorView.rgb[off + 1];
         const b = colorView.rgb[off + 2];
 
-        const colorId = nearestLegoColor([r, g, b], palette).id;
+        const colorId = nearestBrickColor([r, g, b], palette).id;
         voxels.push({
           coord: [x, y, z],
           colorId,

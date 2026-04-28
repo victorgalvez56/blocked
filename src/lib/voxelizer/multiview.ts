@@ -1,5 +1,5 @@
 import { availableColors } from '@/lib/palette';
-import { nearestLegoColor } from '@/lib/color/nearest-lego';
+import { nearestBrickColor } from '@/lib/color/nearest-brick';
 import { packBricks } from './brick-packer';
 import { hollowGrid } from './hollow';
 import type { VoxelGridSnapshot, Voxel } from '@/types/voxel.types';
@@ -8,9 +8,9 @@ import type { RGB } from '@/lib/color/lab';
 
 export interface MultiviewImages {
   front: HTMLImageElement;
-  side: HTMLImageElement;
-  back: HTMLImageElement;
-  top: HTMLImageElement;
+  side?: HTMLImageElement | null;
+  back?: HTMLImageElement | null;
+  top?: HTMLImageElement | null;
 }
 
 interface MaskedView {
@@ -114,33 +114,39 @@ export function voxelizeMultiview(
   const N = Math.max(8, opts.resolution);
 
   const front = buildMaskedView(images.front, N, opts.backgroundThreshold);
-  const side = buildMaskedView(images.side, N, opts.backgroundThreshold);
-  const top = buildMaskedView(images.top, N, opts.backgroundThreshold);
+  const side = images.side ? buildMaskedView(images.side, N, opts.backgroundThreshold) : null;
+  const top = images.top ? buildMaskedView(images.top, N, opts.backgroundThreshold) : null;
   // back is intentionally unused — front drives both X×Y silhouette and color.
 
   // FRONT-DRIVEN BAS-RELIEF:
-  //   - Front silhouette = X×Y mask + per-pixel color (principal)
-  //   - Per-pixel thickness from front edge distance (organic depth like single-view)
-  //   - Side/top only act as global thickness CAPS per row (y) and column (x)
-  //     so a thin subject (book, profile) doesn't over-extrude
+  //   - Front silhouette = X×Y mask + per-pixel color (principal, always required)
+  //   - Per-pixel thickness from front edge distance (organic depth)
+  //   - Side/top are OPTIONAL caps per row (y) and column (x): when absent,
+  //     fraction defaults to 1.0 (no constraint) so a single front image still works
   //   - Bricks centered around midZ (mirror)
-  //   - Back is ignored
+  //   - Back is ignored entirely
   const edge = chamferEdgeDistance(front.mask, N);
 
-  // Side view fills the Y×Z plane. At image row py (= world y), how much of Z is foreground?
   const sideDepthFraction = new Float32Array(N);
-  for (let py = 0; py < N; py++) {
-    let count = 0;
-    for (let pz = 0; pz < N; pz++) if (side.mask[py * N + pz]) count++;
-    sideDepthFraction[py] = count / N;
+  if (side) {
+    for (let py = 0; py < N; py++) {
+      let count = 0;
+      for (let pz = 0; pz < N; pz++) if (side.mask[py * N + pz]) count++;
+      sideDepthFraction[py] = count / N;
+    }
+  } else {
+    sideDepthFraction.fill(1);
   }
 
-  // Top view fills the X×Z plane. At image column px (= world x), how much of Z is foreground?
   const topDepthFraction = new Float32Array(N);
-  for (let px = 0; px < N; px++) {
-    let count = 0;
-    for (let pz = 0; pz < N; pz++) if (top.mask[pz * N + px]) count++;
-    topDepthFraction[px] = count / N;
+  if (top) {
+    for (let px = 0; px < N; px++) {
+      let count = 0;
+      for (let pz = 0; pz < N; pz++) if (top.mask[pz * N + px]) count++;
+      topDepthFraction[px] = count / N;
+    }
+  } else {
+    topDepthFraction.fill(1);
   }
 
   const palette = availableColors();
@@ -169,13 +175,15 @@ export function voxelizeMultiview(
 
       // Effective normalized thickness: edge-shaped, capped by side/top, capped by global ceiling.
       const norm = Math.min(edgeFactor + 0.25, localThickness, sideTopCeiling);
-      const thickness = Math.max(1, Math.round(norm * N * 0.55));
+      // opts.density (0..100) is the user's piece-count lever — scales the Z thickness budget.
+      const densityScale = Math.max(0, Math.min(100, opts.density)) / 100;
+      const thickness = Math.max(1, Math.round(norm * N * densityScale));
       const half = Math.floor(thickness / 2);
       const zMin = Math.max(0, midZ - half);
       const zMax = Math.min(N - 1, midZ + (thickness - half - 1));
 
       const i = (py * N + x) * 4;
-      const colorId = nearestLegoColor(
+      const colorId = nearestBrickColor(
         [front.rgb[i], front.rgb[i + 1], front.rgb[i + 2]],
         palette,
       ).id;

@@ -1,4 +1,4 @@
-import bricksFile from '../../data/lego-bricks.json';
+import bricksFile from '../../data/bricks.json';
 import type { BrickCatalog, BrickDef } from '@/types/brick.types';
 
 const file = bricksFile as BrickCatalog;

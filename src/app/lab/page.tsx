@@ -407,7 +407,7 @@ export default function LabPage() {
             <div className="space-y-2 border-2 border-ink bg-paper p-3 shadow-[3px_3px_0_var(--ink)]">
               <div className="flex items-baseline justify-between">
                 <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink-2">
-                  → Convert mesh to Lego bricks
+                  → Convert mesh to bricks
                 </div>
                 <div className="font-mono text-[10px] text-ink-2">
                   Resolution: <span className="font-bold text-red">{resolution}</span>

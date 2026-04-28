@@ -3,7 +3,7 @@ export interface BrickDef {
   type: 'brick' | 'plate';
   dimensions: { studsX: number; studsZ: number; plateHeight: number };
   bricklinkPartId: string | null;
-  legoDesignId: string | null;
+  designId: string | null;
   category: 'core' | 'optional';
 }
 

@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "source": "Canonical BrickLink part numbers (well-established, stable since the original Lego brick releases). Verify against bricklink.com before production BOM export.",
+  "unit": {
+    "studMm": 8,
+    "plateHeightMm": 3.2,
+    "brickHeightMm": 9.6,
+    "comment": "1 brick = 3 plates tall. Stud pitch = 8mm."
+  },
+  "pieces": [
+    { "id": "brick-1x1", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 1, "plateHeight": 3 }, "bricklinkPartId": "3005", "designId": "3005", "category": "core" },
+    { "id": "brick-1x2", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 2, "plateHeight": 3 }, "bricklinkPartId": "3004", "designId": "3004", "category": "core" },
+    { "id": "brick-1x3", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 3, "plateHeight": 3 }, "bricklinkPartId": "3622", "designId": "3622", "category": "core" },
+    { "id": "brick-1x4", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 4, "plateHeight": 3 }, "bricklinkPartId": "3010", "designId": "3010", "category": "core" },
+    { "id": "brick-1x6", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 6, "plateHeight": 3 }, "bricklinkPartId": "3009", "designId": "3009", "category": "core" },
+    { "id": "brick-1x8", "type": "brick", "dimensions": { "studsX": 1, "studsZ": 8, "plateHeight": 3 }, "bricklinkPartId": "3008", "designId": "3008", "category": "core" },
+    { "id": "brick-2x2", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 2, "plateHeight": 3 }, "bricklinkPartId": "3003", "designId": "3003", "category": "core" },
+    { "id": "brick-2x3", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 3, "plateHeight": 3 }, "bricklinkPartId": "3002", "designId": "3002", "category": "core" },
+    { "id": "brick-2x4", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 4, "plateHeight": 3 }, "bricklinkPartId": "3001", "designId": "3001", "category": "core" },
+    { "id": "brick-2x6", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 6, "plateHeight": 3 }, "bricklinkPartId": "2456", "designId": "2456", "category": "optional" },
+    { "id": "brick-2x8", "type": "brick", "dimensions": { "studsX": 2, "studsZ": 8, "plateHeight": 3 }, "bricklinkPartId": "3007", "designId": "3007", "category": "optional" },
+    { "id": "plate-1x1", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 1, "plateHeight": 1 }, "bricklinkPartId": "3024", "designId": "3024", "category": "core" },
+    { "id": "plate-1x2", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 2, "plateHeight": 1 }, "bricklinkPartId": "3023", "designId": "3023", "category": "core" },
+    { "id": "plate-1x3", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 3, "plateHeight": 1 }, "bricklinkPartId": "3623", "designId": "3623", "category": "core" },
+    { "id": "plate-1x4", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 4, "plateHeight": 1 }, "bricklinkPartId": "3710", "designId": "3710", "category": "core" },
+    { "id": "plate-1x6", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 6, "plateHeight": 1 }, "bricklinkPartId": "3666", "designId": "3666", "category": "core" },
+    { "id": "plate-1x8", "type": "plate", "dimensions": { "studsX": 1, "studsZ": 8, "plateHeight": 1 }, "bricklinkPartId": "3460", "designId": "3460", "category": "core" },
+    { "id": "plate-2x2", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 2, "plateHeight": 1 }, "bricklinkPartId": "3022", "designId": "3022", "category": "core" },
+    { "id": "plate-2x3", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 3, "plateHeight": 1 }, "bricklinkPartId": "3021", "designId": "3021", "category": "core" },
+    { "id": "plate-2x4", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 4, "plateHeight": 1 }, "bricklinkPartId": "3020", "designId": "3020", "category": "core" },
+    { "id": "plate-2x6", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 6, "plateHeight": 1 }, "bricklinkPartId": "3795", "designId": "3795", "category": "optional" },
+    { "id": "plate-2x8", "type": "plate", "dimensions": { "studsX": 2, "studsZ": 8, "plateHeight": 1 }, "bricklinkPartId": "3034", "designId": "3034", "category": "optional" }
+  ]
+}
