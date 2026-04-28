@@ -99,16 +99,6 @@ The front view drives the silhouette and shape. Side and top views act as per-ro
 
 **Brick optimization** merges adjacent same-color 1×1s into larger pieces (1×2, 1×4, 1×6, 1×8, 2×3, 2×4). **Hollow interior** skips pieces that will never be visible, cutting piece count significantly.
 
-### AI generation modes
-
-| Mode | Cost | Time | How |
-| --- | --- | --- | --- |
-| 4-view (`gpt-image-1`) | ~$0.17 | ~30–60 s | front view generated first as anchor; side/back/top edited with front as reference for identity consistency |
-| 8-view (`gpt-image-1`) | ~$0.34 | ~30–60 s | 8 views at 45° intervals; front as reference for all 7 edits |
-| Max detail (Trellis) | ~$0.08 | ~30–60 s | text → DALL-E → Trellis AI mesh → 4 ortho renders → voxelizer |
-
-AI buttons are gated behind `SHOW_AI_GENERATE` — the code paths and API routes are preserved but hidden for the default build.
-
 ### Studio controls
 
 | Action | How |
