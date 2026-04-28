@@ -8,14 +8,14 @@ A 3D brick design studio that voxelizes any image into a real, orderable brick b
 
 ![Blocked preview](docs/preview.gif)
 
-<sub>Demo recorded with <a href="https://openvid.dev">openvid.dev</a></sub>
-
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev)
 [![Three.js](https://img.shields.io/badge/Three.js-r168-049EF4)](https://threejs.org)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933)](package.json)
 
 </div>
+
+<sub>Demo recorded with <a href="https://openvid.dev">openvid.dev</a></sub>
 
 ---
 
